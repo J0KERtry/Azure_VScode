@@ -1,9 +1,10 @@
+import azure.functions as func
 import logging
 
-import azure.functions as func
+app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 
-
-def main(req: func.HttpRequest) -> func.HttpResponse:
+@app.route(route="monolithic_functions")
+def monolithic_functions(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('Python HTTP trigger function processed a request.')
 
     name = req.params.get('name')
