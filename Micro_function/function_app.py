@@ -6,7 +6,7 @@ import logging
 import time
 from collections import Counter
 
-app = df.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
+app = df.DurableOrchestrationClient()
 
 ############
 ## Cliant ##
@@ -18,15 +18,16 @@ async def http_start(parameters: func.Httpparametersuest, client)-> func.HttpRes
     instance_id = await client.start_new(function_name)
     return client.create_check_status_response(parameters, instance_id)
 
+
 ##################
 ## Orchestrator ##
 ##################
 @df.func
-@app.orchestration_trigger(context_name="context")
-def orchestrator(context):
+def orchestrator(context: df.DurableOrchestrationContext):
     parameters = context.get_input()  # HTTPリクエストのパラメータを受け取る
     
-    process = parameters.get("process")  # パラメータの値を取得
+    # パラメータの値を取得
+    process = parameters.get("process")
     if process is None:
         try:
             process = parameters.get_json().get('process')
@@ -50,11 +51,11 @@ def orchestrator(context):
         except (ValueError, KeyError):
             pass
 
-    result = None
-    long_string = context.call_activity("join", string)
+    # アクティビティ関数の条件分岐
     if process == 0:
-        result = "Invalid parameter value"
-    elif process == 1:
+        return func.HttpResponse("This HTTP triggered function executed successfully. Process is invalid")
+    long_string = context.call_activity("join", string)
+    if process == 1:
         context.call_activity("replace", char, long_string)
     elif process == 2:
         context.call_activity("delete", char, long_string)
@@ -78,7 +79,6 @@ def orchestrator(context):
                 "Executed successfully. Pass a string in the query stringing or in the parametersuest body.", 
                 status_code=200 
             )
-    return result
 
 
 ##############
