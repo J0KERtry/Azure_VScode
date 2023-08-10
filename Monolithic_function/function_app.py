@@ -24,14 +24,14 @@ def monolithic_functions(req: func.HttpRequest) -> func.HttpResponse:
         process = 0
 
     char = req.params.get('char')
-    if not char:
+    if char is None:
         try:
             char = req.get_json().get('char')
         except ValueError:
             pass
 
     string = req.params.get('string')
-    if not string:
+    if string is None:
         try:
             string = req.get_json().get('string')
         except ValueError:
