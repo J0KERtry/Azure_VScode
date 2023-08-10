@@ -13,10 +13,10 @@ app = df.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 ############
 @app.route(route="orchestrators/{functionName}")
 @app.durable_client_input(client_name="client")
-async def http_start(req: func.HttpRequest, client)-> func.HttpResponse:
-    function_name = req.route_params.get('functionName')
+async def http_start(parameters: func.Httpparametersuest, client)-> func.HttpResponse:
+    function_name = parameters.route_params.get('functionName')
     instance_id = await client.start_new(function_name)
-    return client.create_check_status_response(req, instance_id)
+    return client.create_check_status_response(parameters, instance_id)
 
 ##################
 ## Orchestrator ##
@@ -25,113 +25,102 @@ async def http_start(req: func.HttpRequest, client)-> func.HttpResponse:
 @app.orchestration_trigger(context_name="context")
 def orchestrator(context):
     parameters = context.get_input()  # HTTPリクエストのパラメータを受け取る
-    result1 = context.call_activity("MyActivityFunction", parameters.get("param1"))
-    result2 = context.call_activity("MyActivityFunction", parameters.get("param2"))
-    result1 = yield context.call_activity("hello", "Seattle")
-    result2 = yield context.call_activity("hello", "Tokyo")
-    result3 = yield context.call_activity("hello", "London")
-    return [result1, result2, result3]
-
-##############
-## Activity ##
-##############
-@app.activity_trigger(input_name="city")
-def hello(city: str):
-    return "Hello " + city  
-
-@app.route(route="monolithic_functions")
-def monolithic_functions(req: func.HttpRequest) -> func.HttpResponse:
-    logging.info('Python HTTP trigger function processed a request.')
-
-
-
-
-
-
-# パラメータかjsonからデータ取得
-    process = req.params.get('process')
+    
+    process = parameters.get("process")  # パラメータの値を取得
     if process is None:
         try:
-            process = req.get_json().get('process')
-        except ValueError:
+            process = parameters.get_json().get('process')
+        except (ValueError, KeyError):
             process = 0
     process = int(process)
     if process not in [0, 1, 2, 3, 4] and process < 100:
         process = 0
 
-    char = req.params.get('char')
-    if not char:
+    char = parameters.get('char')
+    if char is None:
         try:
-            char = req.get_json().get('char')
-        except ValueError:
+            char = parameters.get_json().get('char')
+        except (ValueError, KeyError):
             pass
 
-    string = req.params.get('string')
-    if not string:
+    string = parameters.get('string')
+    if string is None:
         try:
-            string = req.get_json().get('string')
-        except ValueError:
+            string = parameters.get_json().get('string')
+        except (ValueError, KeyError):
             pass
-    if string:
-        # 文字列をn個結合して長文に変換
-        n = 3
-        long_string = string
-        for _ in range(n-1):
-            long_string += " " + string
 
-
-# Activity関数群
-    # process=None または 範囲外 の処理
-    if process==0:
-        return func.HttpResponse("This HTTP triggered function executed successfully. Process is invalid")
-    
-    #charを,設定した文字列に置換 (if文でさらに細分化し文字列を設定)
-    elif process==1 and char and long_string:  
-        if 'a' <= char[0] <= 'i':
-            replacement = 'test1'
-        elif 'j' <= char[0] <= 's':
-            replacement = 'test2'
-        else:
-            replacement = 'test3'
-        long_string = long_string.replace(char, replacement)
-        return func.HttpResponse(f"The character {char} was converted => {long_string}.")
-
-    #charを削除        
-    elif process==2 and char and long_string:  
-        long_string = long_string.replace(char, '')
-        return func.HttpResponse(f"The character {char} was delated => {long_string}.")
-    
-    #charの出現回数
-    elif process==3 and char and long_string:  
-        char_count = long_string.count(char)
-        return func.HttpResponse(f"The character '{char}' appears {char_count} times.")
-    
-    #回数ソート
-    elif process==4 and long_string: 
-        words = long_string.split()
-        word_counts = Counter(words)
-        sorted_word_counts = sorted(word_counts.items(), key=lambda x: x[1], reverse=True)
-        result = '\n'.join([f"{word}: {count}" for word, count in sorted_word_counts])
-        return func.HttpResponse(result)
-    
-    # process秒間sleep
-    elif process >=100:    
-        time.sleep(process)
-        return func.HttpResponse(f"It was stopped for {process} seconds.")
-    
+    result = None
+    long_string = context.call_activity("join", string)
+    if process == 0:
+        result = "Invalid parameter value"
+    elif process == 1:
+        context.call_activity("replace", char, long_string)
+    elif process == 2:
+        context.call_activity("delete", char, long_string)
+    elif process == 3:
+        context.call_activity("count_up", char, long_string)
+    elif process == 4:
+        context.call_activity("sort", long_string)
     else:
         if char is None and string is None:
             return func.HttpResponse(
-                "Executed successfully. Pass a char and string in the query stringing or in the request body for a response.", 
+                "Executed successfully. Pass a char and string in the query stringing or in the parametersuest body.", 
                 status_code=200 
             )
         if char is None:
             return func.HttpResponse(
-                "Executed successfully. Pass a char in the query stringing or in the request body for a response.", 
+                "Executed successfully. Pass a char in the query stringing or in the parametersuest body.", 
                 status_code=200 
             )
         if string is None:
             return func.HttpResponse(
-                "Executed successfully. Pass a string in the query stringing or in the request body for a response.", 
+                "Executed successfully. Pass a string in the query stringing or in the parametersuest body.", 
                 status_code=200 
             )
+    return result
+
+
+##############
+## Activity ##
+##############
+@app.activity_trigger(input_name="input_value")
+def join(long_string: str):
+    n = 5
+    for _ in range(n-1):
+        long_string += " " + long_string
+    return long_string
+
+@app.activity_trigger(input_name="input_value")
+def replace(char: str, long_string:str):
+    if 'a' <= char[0] <= 'i':
+        replacement = 'a~i'
+    elif 'j' <= char[0] <= 's':
+        replacement = 'j~s'
+    else:
+        replacement = 't~z'
+    long_string = long_string.replace(char, replacement)
+    return func.HttpResponse(f"The character [{char}] was converted => [{long_string}].")
+
+@app.activity_trigger(input_name="input_value")
+def delete(char: str, long_string:str):
+    long_string = long_string.replace(char, '')
+    return func.HttpResponse(f"The character [{char}] was delated => [{long_string}].")
+
+@app.activity_trigger(input_name="input_value")
+def count_up(char: str, long_string:str):
+    char_count = long_string.count(char)
+    return func.HttpResponse(f"The character [{char}] appears {char_count} times.")
+
+@app.activity_trigger(input_name="input_value")
+def sort(long_string: str):
+    words = long_string.split()
+    word_counts = Counter(words)
+    sorted_word_counts = sorted(word_counts.items(), key=lambda x: x[1], reverse=True)
+    result = '\n'.join([f"{word}: {count}" for word, count in sorted_word_counts])
+    return func.HttpResponse(result)
+
+@app.activity_trigger(input_name="input_value")
+def sleep(process: int):
+    time.sleep(process)
+    return func.HttpResponse(f"It was stopped for {process} seconds.")        
