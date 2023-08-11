@@ -1,8 +1,5 @@
-# 月額料金[円] = { ( リソース使用量[GB/秒] - 400000[GB/秒] ) × 0.001792[円] } + { ( 実行回数[回] - 1000000[回] ) / 1000000 × 22.400[円] }
-
 import azure.functions as func
 import azure.durable_functions as df
-import logging
 import time
 from collections import Counter
 
@@ -11,9 +8,9 @@ app = df.DurableOrchestrationClient()
 ############
 ## Cliant ##
 ############
-@app.route(route="orchestrators/{functionName}")
-@app.durable_client_input(client_name="client")
-async def http_start(parameters: func.Httpparametersuest, client)-> func.HttpResponse:
+@app.function("DurableClientExample")
+async def durable_client(parameters: func.HttpRequest, context: func.Context) -> func.HttpResponse:
+    client = df.DurableOrchestrationClient(context)
     function_name = parameters.route_params.get('functionName')
     instance_id = await client.start_new(function_name)
     return client.create_check_status_response(parameters, instance_id)
@@ -23,6 +20,7 @@ async def http_start(parameters: func.Httpparametersuest, client)-> func.HttpRes
 ## Orchestrator ##
 ##################
 @df.func
+@app.orchestration_trigger(context_name="context")
 def orchestrator(context: df.DurableOrchestrationContext):
     parameters = context.get_input()  # HTTPリクエストのパラメータを受け取る
     
