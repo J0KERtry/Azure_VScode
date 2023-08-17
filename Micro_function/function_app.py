@@ -1,25 +1,26 @@
 import azure.functions as func
 import azure.durable_functions as df
 import time
+import logging
 from collections import Counter
 
-app = df.DurableOrchestrationClient()
+app = df.DFApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 
 ############
 ## Cliant ##
 ############
-@app.function("DurableClientExample")
-async def durable_client(parameters: func.HttpRequest, context: func.Context) -> func.HttpResponse:
-    client = df.DurableOrchestrationClient(context)
+@app.route(route="orchestrators/{functionName}")
+@app.durable_client_input(client_name="client")
+async def durable_client(parameters: func.HttpRequest, client) -> func.HttpResponse:
     function_name = parameters.route_params.get('functionName')
-    instance_id = await client.start_new(function_name)
+    instance_id = await client.start_new(function_name, None)
+    logging.info(f"Started orchestration with ID = '{instance_id}'.")
     return client.create_check_status_response(parameters, instance_id)
 
 
 ##################
 ## Orchestrator ##
 ##################
-@df.func
 @app.orchestration_trigger(context_name="context")
 def orchestrator(context: df.DurableOrchestrationContext):
     parameters = context.get_input()  # HTTPリクエストのパラメータを受け取る
@@ -82,7 +83,7 @@ def orchestrator(context: df.DurableOrchestrationContext):
 ##############
 ## Activity ##
 ##############
-@app.activity_trigger(input_name="input_value")
+@app.activity_trigger(input_name="long_string")
 def join(long_string: str):
     n = 5
     for _ in range(n-1):
@@ -110,7 +111,7 @@ def count_up(char: str, long_string:str):
     char_count = long_string.count(char)
     return func.HttpResponse(f"The character [{char}] appears {char_count} times.")
 
-@app.activity_trigger(input_name="input_value")
+@app.activity_trigger(input_name="long_string")
 def sort(long_string: str):
     words = long_string.split()
     word_counts = Counter(words)
@@ -118,7 +119,7 @@ def sort(long_string: str):
     result = '\n'.join([f"{word}: {count}" for word, count in sorted_word_counts])
     return func.HttpResponse(result)
 
-@app.activity_trigger(input_name="input_value")
+@app.activity_trigger(input_name="process")
 def sleep(process: int):
     time.sleep(process)
     return func.HttpResponse(f"It was stopped for {process} seconds.")        
