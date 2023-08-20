@@ -71,7 +71,7 @@ def orchestrator(context: df.DurableOrchestrationContext):
     elif process == 4:
         result = context.call_activity("sort", long_string)
     elif process == 5:
-        result = context.call_activity("sleep")
+        result = context.call_activity("sleep", process)
     else:
         if char is None and string is None:
             result = "Executed successfully. Pass a char and string in the query or in the request body."
@@ -85,18 +85,18 @@ def orchestrator(context: df.DurableOrchestrationContext):
 ## Activity ##
 ##############
 @app.activity_trigger
-def failed():
+def failed() -> str:
     return "This HTTP triggered function executed successfully. Process is invalid"
 
 @app.activity_trigger
-def join(long_string: str):
+def join(long_string: str) -> str:
     n = 5
     for _ in range(n-1):
         long_string += " " + long_string
     return long_string
 
 @app.activity_trigger
-def replace(value, char: str, long_string:str):
+def replace(char: str, long_string: str) -> str:
     if 'a' <= char[0] <= 'i':
         replacement = 'a~i'
     elif 'j' <= char[0] <= 's':
@@ -107,17 +107,17 @@ def replace(value, char: str, long_string:str):
     return f"The character [{char}] was converted => [{long_string}]."
 
 @app.activity_trigger
-def delete(char: str, long_string:str):
+def delete(char: str, long_string: str) -> str:
     long_string = long_string.replace(char, '')
     return f"The character [{char}] was delated => [{long_string}]."
 
 @app.activity_trigger
-def count_up(char: str, long_string:str):
+def count_up(char: str, long_string: str) -> str:
     char_count = long_string.count(char)
     return f"The character [{char}] appears {char_count} times."
 
 @app.activity_trigger
-def sort(long_string: str):
+def sort(long_string: str) -> str:
     words = long_string.split()
     word_counts = Counter(words)
     sorted_word_counts = sorted(word_counts.items(), key=lambda x: x[1], reverse=True)
@@ -125,6 +125,6 @@ def sort(long_string: str):
     return result
 
 @app.activity_trigger
-def sleep(process: int):
+def sleep(process: int) -> str:
     time.sleep(process)
     return f"It was stopped for {process} seconds."
