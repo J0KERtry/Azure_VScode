@@ -43,20 +43,21 @@ async def client_function(req: func.HttpRequest, client) -> func.HttpResponse:
         "string": string
     })
     logging.info(f"Started orchestration with ID = '{instance_id}'.")
-
-    return func.HttpResponse(instance_id, status_code=200)
+    response = client.create_check_status_response(req, instance_id)
+    return func.HttpResponse(response, status_code=200)
 
 
 ##################
 ## Orchestrator ##
 ##################
 @app.orchestration_trigger(context_name="context")
-def orchestrator(context: df.DurableOrchestrationContext):
+def orchestrator(context: df.DurableOrchestrationContext) -> str:
     parameters = context.get_input()
     process = parameters.get("process")
     char = parameters.get("char")
     string = parameters.get("string")
 
+    result = None
     # アクティビティ関数の条件分岐
     if process == 0:
         result = context.call_activity("failed")
@@ -76,9 +77,9 @@ def orchestrator(context: df.DurableOrchestrationContext):
         if char is None and string is None:
             result = "Executed successfully. Pass a char and string in the query or in the request body."
         if char is None:
-            result = ("Executed successfully. Pass a char in the query or in the request body.")
+            result = "Executed successfully. Pass a char in the query or in the request body."
         if string is None:
-            result = ("Executed successfully. Pass a string in the query or in the request body.")
+            result = "Executed successfully. Pass a string in the query or in the request body."
     return result
 
 ##############
@@ -109,7 +110,7 @@ def replace(char: str, long_string: str) -> str:
 @app.activity_trigger
 def delete(char: str, long_string: str) -> str:
     long_string = long_string.replace(char, '')
-    return f"The character [{char}] was delated => [{long_string}]."
+    return f"The character [{char}] was deleted => [{long_string}]."
 
 @app.activity_trigger
 def count_up(char: str, long_string: str) -> str:
