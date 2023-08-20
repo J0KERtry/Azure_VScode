@@ -11,7 +11,7 @@ app = df.DFApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 ############
 @app.route(route="orchestrators/orchestrator")
 @app.durable_client_input(client_name="client")
-async def durable_client(req: func.HttpRequest, client) -> func.HttpResponse:
+async def client_function(req: func.HttpRequest, client) -> func.HttpResponse:
     # HTTPリクエストから必要なパラメータを取得
     process = req.params.get("process")
     if process is None:
@@ -43,9 +43,8 @@ async def durable_client(req: func.HttpRequest, client) -> func.HttpResponse:
         "string": string
     })
     logging.info(f"Started orchestration with ID = '{instance_id}'.")
-    
-    return client.create_check_status_response(req, instance_id)
 
+    return func.HttpResponse(instance_id, status_code=200)
 
 
 ##################
