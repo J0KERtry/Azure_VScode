@@ -2,6 +2,7 @@ import azure.functions as func
 import azure.durable_functions as df
 import time
 import logging
+import json
 from collections import Counter
 
 app = df.DFApp(http_auth_level=func.AuthLevel.ANONYMOUS)
@@ -44,7 +45,18 @@ async def client_function(req: func.HttpRequest, client: df.DurableOrchestration
     })
     logging.info(f"Started orchestration with ID = '{instance_id}'.")
     
-    return await client.wait_for_completion_or_create_check_status_response(req, instance_id)
+    # オーケストレーションの完了を待機
+    await client.wait_for_completion_or_create_check_status_response(req, instance_id)
+
+    # オーケストレーションの実行状態を取得
+    status = await client.get_status(instance_id)
+
+    # オーケストレーションの実行結果を取得
+    runtime = status.runtime_status
+    input_ = status.input_
+    output = status.output  ## オーケストレーターインスタンスの完了によって返される JSON シリアル化可能な値を取得
+    history = status.history
+    return f"runtime: {runtime}\n\ninput_:{input_}\n\noutput:{output}\n\nhistory:{history}" 
 
 
 ##################
@@ -59,10 +71,14 @@ def orchestrator(context: df.DurableOrchestrationContext) -> str:
 
     result = None
     # アクティビティ関数の条件分岐
+    # process=0 のこの部分を修正して正しい出力を得れればよい
     if process == 0:
-        result = context.call_activity("failed")
-    
-    long_string = yield context.call_activity("join", string)
+        result = context.call_activity("failed") # 返り値の型：<class 'azure.durable_functions.models.Task.AtomicTask'>
+        result = str(result)
+        context.set_custom_status(result) # TypeError: Object of type AtomicTask is not JSON serializable
+        return result
+
+    long_string = context.call_activity("join", string)
     if process == 1:
         result = context.call_activity("replace", char, long_string)
     elif process == 2:
@@ -80,6 +96,8 @@ def orchestrator(context: df.DurableOrchestrationContext) -> str:
             result = "Executed successfully. Pass a char in the query or in the request body."
         if string is None:
             result = "Executed successfully. Pass a string in the query or in the request body."
+
+    context.set_custom_status(result)
     return result
 
 ##############
@@ -87,13 +105,14 @@ def orchestrator(context: df.DurableOrchestrationContext) -> str:
 ##############
 @app.activity_trigger
 def failed() -> str:
-    return "This HTTP triggered function executed successfully. Process is invalid"
+    return "failed_function executed successfully."
 
 @app.activity_trigger
-def join(long_string: str) -> str:
+def join(string: str) -> str:
     n = 5
+    long_string = string
     for _ in range(n-1):
-        long_string += " " + long_string
+        long_string += " " + string
     return long_string
 
 @app.activity_trigger

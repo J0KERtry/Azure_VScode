@@ -12,7 +12,7 @@ def monolithic_functions(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('Python HTTP trigger function processed a request.')
 
 
-# パラメータかjsonからデータ取得
+    ### パラメータかjsonからデータ取得  ###
     process = req.params.get('process')
     if process is None:
         try:
@@ -44,7 +44,7 @@ def monolithic_functions(req: func.HttpRequest) -> func.HttpResponse:
             long_string += " " + string
 
 
-# Activity関数群
+    #### Activity関数群  ###
     # process=None または 範囲外 の処理
     if process==0:
         return func.HttpResponse("This HTTP triggered function executed successfully. Process is invalid")
