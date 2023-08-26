@@ -45,7 +45,7 @@ def monolithic_functions(req: func.HttpRequest) -> func.HttpResponse:
 
 
     #### Activity関数群  ###
-    # process=None または 範囲外 の処理
+
     if process==0:
         return func.HttpResponse("This HTTP triggered function executed successfully. Process is invalid")
     
