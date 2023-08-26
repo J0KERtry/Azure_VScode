@@ -2,7 +2,6 @@ import azure.functions as func
 import azure.durable_functions as df
 import time
 import logging
-import json
 from collections import Counter
 
 app = df.DFApp(http_auth_level=func.AuthLevel.ANONYMOUS)
@@ -70,34 +69,24 @@ def orchestrator(context: df.DurableOrchestrationContext) -> str:
     string = parameters.get("string")
 
     result = None
+    inputs = {"char": char, "long_string": strings}
     # アクティビティ関数の条件分岐
-    # process=0 のこの部分を修正して正しい出力を得れればよい
     if process == 0:
-        result = yield context.call_activity("failed", "") # 返り値の型：<class 'azure.durable_functions.models.Task.AtomicTask'>
-        context.set_custom_status(result) # TypeError: Object of type AtomicTask is not JSON serializable
+        result = yield context.call_activity(failed, "")
+        context.set_custom_status(result)
         return result
 
-    long_string = context.call_activity("join", string)
+    strings = yield context.call_activity("join", string)
     if process == 1:
-        activity_input = {"char": char, "long_string": long_string}
-        result = context.call_activity("replace", activity_input)
+        result = yield context.call_activity("replace", inputs)
     elif process == 2:
-        activity_input = {"char": char, "long_string": long_string}
-        result = context.call_activity("delete", activity_input)
+        result = yield context.call_activity("delete", inputs)
     elif process == 3:
-        activity_input = {"char": char, "long_string": long_string}
-        result = context.call_activity("count_up", activity_input)
+        result = yield context.call_activity("count_up", inputs)
     elif process == 4:
-        result = context.call_activity("sort", long_string)
-    elif process == 5:
-        result = context.call_activity("sleep", process)
+        result = yield context.call_activity("sort", strings)
     else:
-        if char is None and string is None:
-            result = "Executed successfully. Pass a char and string in the query or in the request body."
-        if char is None:
-            result = "Executed successfully. Pass a char in the query or in the request body."
-        if string is None:
-            result = "Executed successfully. Pass a string in the query or in the request body."
+        result = yield context.call_activity("sleep", process)
 
     context.set_custom_status(result)
     return result
@@ -109,7 +98,7 @@ def orchestrator(context: df.DurableOrchestrationContext) -> str:
 def failed(blank: str) -> str:
     return "failed_function executed successfully." + blank
 
-@app.activity_trigger
+@app.activity_trigger(input_name="string")
 def join(string: str) -> str:
     n = 5
     long_string = string
@@ -117,10 +106,10 @@ def join(string: str) -> str:
         long_string += " " + string
     return long_string
 
-@app.activity_trigger
-def replace(input: dict) -> str:
-    char = input["char"]
-    long_string = input["long_string"]
+@app.activity_trigger(input_name="inputs")
+def replace(inputs: dict) -> str:
+    char = inputs["char"]
+    long_string = inputs["long_string"]
     if 'a' <= char[0] <= 'i':
         replacement = 'a~i'
     elif 'j' <= char[0] <= 's':
@@ -130,25 +119,29 @@ def replace(input: dict) -> str:
     long_string = long_string.replace(char, replacement)
     return f"The character [{char}] was converted => [{long_string}]."
 
-@app.activity_trigger
-def delete(char: str, long_string: str) -> str:
+@app.activity_trigger(input_name="inputs")
+def delete(inputs: dict) -> str:
+    char = inputs["char"]
+    long_string = inputs["long_string"]
     long_string = long_string.replace(char, '')
     return f"The character [{char}] was deleted => [{long_string}]."
 
-@app.activity_trigger
-def count_up(char: str, long_string: str) -> str:
+@app.activity_trigger(input_name="inputs")
+def count_up(inputs: dict) -> str:
+    char = inputs["char"]
+    long_string = inputs["long_string"]
     char_count = long_string.count(char)
     return f"The character [{char}] appears {char_count} times."
 
-@app.activity_trigger
-def sort(long_string: str) -> str:
-    words = long_string.split()
+@app.activity_trigger(input_name="strings")
+def sort(strings: str) -> str:
+    words = strings.split()
     word_counts = Counter(words)
     sorted_word_counts = sorted(word_counts.items(), key=lambda x: x[1], reverse=True)
     result = '\n'.join([f"{word}: {count}" for word, count in sorted_word_counts])
     return result
 
-@app.activity_trigger
+@app.activity_trigger(input_name="process")
 def sleep(process: int) -> str:
     time.sleep(process)
     return f"It was stopped for {process} seconds."
