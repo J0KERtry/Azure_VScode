@@ -73,18 +73,20 @@ def orchestrator(context: df.DurableOrchestrationContext) -> str:
     # アクティビティ関数の条件分岐
     # process=0 のこの部分を修正して正しい出力を得れればよい
     if process == 0:
-        result = context.call_activity("failed") # 返り値の型：<class 'azure.durable_functions.models.Task.AtomicTask'>
-        result = str(result)
+        result = yield context.call_activity("failed", "") # 返り値の型：<class 'azure.durable_functions.models.Task.AtomicTask'>
         context.set_custom_status(result) # TypeError: Object of type AtomicTask is not JSON serializable
         return result
 
     long_string = context.call_activity("join", string)
     if process == 1:
-        result = context.call_activity("replace", char, long_string)
+        activity_input = {"char": char, "long_string": long_string}
+        result = context.call_activity("replace", activity_input)
     elif process == 2:
-        result = context.call_activity("delete", char, long_string)
+        activity_input = {"char": char, "long_string": long_string}
+        result = context.call_activity("delete", activity_input)
     elif process == 3:
-        result = context.call_activity("count_up", char, long_string)
+        activity_input = {"char": char, "long_string": long_string}
+        result = context.call_activity("count_up", activity_input)
     elif process == 4:
         result = context.call_activity("sort", long_string)
     elif process == 5:
@@ -103,9 +105,9 @@ def orchestrator(context: df.DurableOrchestrationContext) -> str:
 ##############
 ## Activity ##
 ##############
-@app.activity_trigger
-def failed() -> str:
-    return "failed_function executed successfully."
+@app.activity_trigger(input_name="blank")
+def failed(blank: str) -> str:
+    return "failed_function executed successfully." + blank
 
 @app.activity_trigger
 def join(string: str) -> str:
@@ -116,7 +118,9 @@ def join(string: str) -> str:
     return long_string
 
 @app.activity_trigger
-def replace(char: str, long_string: str) -> str:
+def replace(input: dict) -> str:
+    char = input["char"]
+    long_string = input["long_string"]
     if 'a' <= char[0] <= 'i':
         replacement = 'a~i'
     elif 'j' <= char[0] <= 's':
