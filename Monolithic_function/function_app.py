@@ -7,96 +7,99 @@ from collections import Counter
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 activity_functions = {"failed", "sleep", "replace", "sort", "count_up", "delete"}
-sleep_times = 10
-join_times = 10
+SLEEP_TIMES = 10
+JOIN_TIMES = 10
 
+def get_param_from_request(req, param_name, json_key=None):
+    param = req.params.get(param_name)
+    if param is None:
+        try:
+            param = req.get_json().get(json_key or param_name)
+        except (ValueError, KeyError):
+            pass
+    return param
+
+##################
+## クライアント ##
+##################
 @app.route(route="main")
 def main(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('Python HTTP trigger function processed a request.')
 
-    ### パラメータかjsonからデータ取得  ###
-    process = req.params.get('process')
-    if process is None:
-        try:
-            process = req.get_json().get('process')
-        except ValueError:
-            pass
+    # パラメータかjsonから値取得
+    process = get_param_from_request(req, "process")
     if process not in activity_functions:
         process = "failed"
-
-    char = req.params.get('char')
-    if char is None:
-        try:
-            char = req.get_json().get('char')
-        except ValueError:
-            pass
-
-    string = req.params.get('string')
-    if string is None:
-        try:
-            string = req.get_json().get('string')
-        except ValueError:
-            pass
+    char = get_param_from_request(req, "char")
+    string = get_param_from_request(req, "string")
 
     # 関数呼び出し
-    if process == "failed" or process == "sleep":
-        result = globals()[process]()
-        return func.HttpResponse(result)
-    
-    strings = join(string)
+    result = execute_process(process, char, string)
 
-    inputs = {"char": char, "strings": strings}
-    result = globals()[process](inputs)
     return func.HttpResponse(result)
-    
 
-##############
-##  関数群  ##
-##############
+#########################
+## オーケストレーション ##
+#########################
+def execute_process(process, char, string):
+    if process in {"failed", "sleep"}:
+        result = globals()[process]()
+    else:
+        strings = join(string)
+        inputs = {"char": char, "strings": strings}
+        result = globals()[process](inputs)
+        
+    return result
+
+
+#########################
+##  アクティビティ関数  ##
+#########################
 def failed():
     return "failed_function executed successfully."
 
 def sleep():
-        time.sleep(sleep_times)
-        return "It was stopped for {sleep_times} seconds."
+        time.sleep(SLEEP_TIMES)
+        return f"It was stopped for {SLEEP_TIMES} seconds."
 
 # 文字列長変更
 def join(string):
-    strings = string
-    for _ in range(join_times - 1):
-        strings += " " + string
+    strings = " ".join([string] * JOIN_TIMES)
     return strings
 
 #charを,設定した文字列に置換 (if文でさらに細分化し文字列を設定)
 def replace(inputs):
     char = inputs["char"]
+    strings = inputs["strings"]
+
     if 'a' <= char[0] <= 'i':
         replacement = 'test1'
     elif 'j' <= char[0] <= 's':
         replacement = 'test2'
     else:
         replacement = 'test3'
-    long_string = long_string.replace(char, replacement)
-    return f"The character {char} was converted => {long_string}."
+
+    strings = strings.replace(char, replacement)
+    return f"The character {char} was converted => {strings}."
 
 #charを削除        
 def delete(inputs):
     char = inputs["char"]
-    long_string = inputs["long_string"]
-    long_string = long_string.replace(char, '')
-    return f"The character {char} was delated => {long_string}."
+    strings = inputs["strings"]
+    strings = strings.replace(char, '')
+    return f"The character {char} was delated => {strings}."
     
 #charの出現回数
 def count_up(inputs):
     char = inputs["char"]
-    long_string = inputs["long_string"]
-    char_count = long_string.count(char)
+    strings = inputs["strings"]
+    char_count = strings.count(char)
     return f"The character '{char}' appears {char_count} times."
     
 #回数ソート
 def sort(inputs):
-        long_string = inputs["long_string"]
-        words = long_string.split()
+        strings = inputs["strings"]
+        words = strings.split()
         word_counts = Counter(words)
         sorted_word_counts = sorted(word_counts.items(), key=lambda x: x[1], reverse=True)
         result = '\n'.join([f"{word}: {count}" for word, count in sorted_word_counts])

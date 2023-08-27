@@ -6,6 +6,17 @@ from collections import Counter
 
 app = df.DFApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 activity_functions = {"failed", "sleep", "replace", "sort", "count_up", "delete"}
+SLEEP_TIMES = 10
+JOIN_TIMES = 10
+
+def get_param_from_request(req, param_name, json_key=None):
+    param = req.params.get(param_name)
+    if param is None:
+        try:
+            param = req.get_json().get(json_key or param_name)
+        except (ValueError, KeyError):
+            pass
+    return param
 
 ############
 ## Cliant ##
@@ -14,29 +25,13 @@ activity_functions = {"failed", "sleep", "replace", "sort", "count_up", "delete"
 @app.durable_client_input(client_name="client")
 async def client_function(req: func.HttpRequest, client: df.DurableOrchestrationClient) -> func.HttpResponse:
     # HTTPリクエストからパラメータを取得
-    process = req.params.get("process")
-    if process is None:
-        try:
-            process = req.get_json().get('process')
-        except (ValueError, KeyError):
-            pass
+    process = get_param_from_request(req, "process")
     if process not in activity_functions:
         process = "failed"
+    char = get_param_from_request(req, "char")
+    string = get_param_from_request(req, "string")
 
-    char = req.params.get('char')
-    if char is None:
-        try:
-            char = req.get_json().get('char')
-        except (ValueError, KeyError):
-            pass
-
-    string = req.params.get('string')
-    if string is None:
-        try:
-            string = req.get_json().get('string')
-        except (ValueError, KeyError):
-            pass
-
+    # オーケストレーションの起動
     instance_id = await client.start_new("orchestrator", None, {
         "process": process,
         "char": char,
@@ -62,23 +57,22 @@ async def client_function(req: func.HttpRequest, client: df.DurableOrchestration
 ##################
 @app.orchestration_trigger(context_name="context")
 def orchestrator(context: df.DurableOrchestrationContext) -> str:
+    # クライアント関数から値取得
     parameters = context.get_input()
     process = parameters.get("process")
     char = parameters.get("char")
     string = parameters.get("string")
 
-    # アクティビティ関数の条件分岐
-    if process == "failed" or process == "sleep":
+    # アクティビティ関数の振り分け
+    if process in {"failed", "sleep"}:
         result = yield context.call_activity(process, "")
-        context.set_custom_status(result)
-        return result
-
-    strings = yield context.call_activity("join", string)
-
-    inputs = {"char": char, "strings": strings}
-    result = yield context.call_activity(process, inputs)
-    context.set_custom_status(result)
+    else:
+        strings = yield context.call_activity("join", string)
+        inputs = {"char": char, "strings": strings}
+        result = yield context.call_activity(process, inputs)
     
+    # クライアント関数へ値渡す
+    context.set_custom_status(result)
     return result
 
 
@@ -91,15 +85,12 @@ def failed(inputs: dict) -> str:
 
 @app.activity_trigger(input_name="inputs")
 def sleep(inputs: dict) -> str:
-    time.sleep(50)
-    return "It was stopped for 50 seconds."
+    time.sleep(SLEEP_TIMES)
+    return f"It was stopped for {SLEEP_TIMES} seconds."
 
 @app.activity_trigger(input_name="string")
 def join(string: str) -> str:
-    n = 10
-    strings = string
-    for _ in range(n-1):
-        strings += " " + string
+    strings = " ".join([string] * JOIN_TIMES)
     return strings
 
 @app.activity_trigger(input_name="inputs")
