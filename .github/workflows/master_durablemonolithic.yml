@@ -65,6 +65,6 @@ jobs:
           app-name: 'DurableMonolithic'
           slot-name: 'Production'
           package: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
-          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_E82C10E0398E41468887530ADE531963 }}
+          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_79911DFEBC1343D782A7A6EEDC8DCE2A }}
           scm-do-build-during-deployment: true
           enable-oryx-build: true
