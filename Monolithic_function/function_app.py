@@ -1,5 +1,3 @@
-# 月額料金[円] = { ( リソース使用量[GB/秒] - 400000[GB/秒] ) × 0.001792[円] } + { ( 実行回数[回] - 1000000[回] ) / 1000000 × 22.400[円] }
-
 import azure.functions as func
 import logging
 import time
@@ -48,7 +46,7 @@ def execute_process(process, char, string):
         strings = join(string)
         inputs = {"char": char, "strings": strings}
         result = globals()[process](inputs)
-        
+
     return result
 
 
