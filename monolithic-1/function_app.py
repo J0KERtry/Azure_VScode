@@ -1,8 +1,8 @@
 import azure.functions as func
 import logging
 from collections import Counter
-import math
-import random
+from math import sqrt
+from random import shuffle, randint
 import time
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
@@ -34,18 +34,51 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     return func.HttpResponse(result)
 
 
-##############
-## 実行部分 ##
-##############
+###########################
+## オーケストレーター関数 ##
+###########################
 def execute_process(size: int, del_num: int) -> str:
+    result = execute_activity(size, del_num)
+    return  result
+
+
+#########################
+##  アクティビティ関数  ##
+#########################
+def execute_activity(size: int, del_num: int) -> str:
     start = time.time()   # 実行開始時間保存
     repeate = 0   # 問題を生成した回数
-    while True:  # 解けない問題であれば繰り返し生成 -> 解く
-        data = prepare_block_check(size)
+    while True:  
+        # prepare_block_check
+        data = [[0 for i in range(size)] for j in range(size)] # 数独用のパネル
+        mass = int(sqrt(size))
+        for i in range(mass):
+            xbase, ybase = mass * i, mass * i   # 対角線上の開始点が panel[ybase][xbase]となる
+            numbers = list(range(1, size + 1))
+            shuffle(numbers)
+
+            for y in range(ybase, ybase + mass):
+                for x in range(xbase, xbase + mass):
+                    data[y][x] = numbers.pop(0)
         repeate += 1
-        if solver(data, size):
-            break
+
+        # solver
+        bool_val = True
+        stack = []  # スタックを用意
+        min_x, min_y, panel = count(data, size)  # 初期の情報を取得
+        while min_x != -1:  # 終了条件が満たされるまでループ
+            data[min_y][min_x] = panel.pop()  # 数字を入れる
+            # スタックに現在の状態を保存
+            stack.append((data, size, min_x, min_y, panel))
+            min_x, min_y, panel = count(data, size)  # 次の情報を取得
+            while not panel:  # 入れる数字がなくなった場合
+                if not stack:
+                    bool_val = False  # スタックが空の場合、解なし
+                data, size, min_x, min_y, panel = stack.pop()  # スタックから前の状態を復元
+
+        if bool_val: break
     performance_time = time.time() - start
+
 
     result = []  # 画面出力を格納するリスト
     result = [f"数独を生成した回数：{repeate}\n", f"実行時間 : {performance_time}\n"]
@@ -53,31 +86,21 @@ def execute_process(size: int, del_num: int) -> str:
         result.append(" ".join(map(str, a)))
     result.append("")  # 空行を追加
 
-    draw_out(data, del_num, size)  # 要素を削除
+
+    # draw_out
+    indices = list(range(size * size))  # すべての要素のインデックスのリストを作成
+    shuffle(indices)  # インデックスをシャッフル
+    for i in range(del_num):
+        index = indices[i]
+        y = index // size
+        x = index % size
+        data[y][x] = 0
+
     result.append("生成した例題")
     for a in data:
         result.append(" ".join(map(str, a)))
-
     return "\n".join(result)  # 改行を挟んでリストを文字列に変換して返す
 
-
-#########################
-##  アクティビティ関数  ##
-#########################
-# 対角線上のブロックにランダムな数字格納
-def prepare_block_check(size: int) -> list:
-  panel = [[0 for i in range(size)] for j in range(size)] # 数独用のパネル
-  
-  mass = int(math.sqrt(size))
-  for i in range(mass):
-    xbase, ybase = mass * i, mass * i   # 対角線上の開始点が panel[ybase][xbase]となる
-    numbers = list(range(1, size + 1))
-    random.shuffle(numbers)
-
-    for y in range(ybase, ybase + mass):
-      for x in range(xbase, xbase + mass):
-        panel[y][x] = numbers.pop(0)
-  return panel
 
 # 横をチェック
 def row_check(values: list, y: int, i: int, size: int) -> bool:
@@ -89,7 +112,7 @@ def column_check(values: list, x: int, i: int, size: int) -> bool:
 
 # row x rowのブロックをチェック
 def block_check(values: list, x: int, y: int, i: int, size: int) -> bool:
-    mass = int(math.sqrt(size))
+    mass = int(sqrt(size))
     xbase, ybase = (x // mass) * mass,  (y // mass) * mass
     return all(i != values[_y][_x]
             for _y in range(ybase, ybase + mass)
@@ -127,14 +150,3 @@ def solver(values: list, size: int) -> bool:
         values[min_y][min_x] = 0 #戻ってきたら0に戻す    
 
     return False
-
-# 完成している数独から要素を削除する
-def draw_out(values: list, del_count: int, size: int) -> list:
-    indices = list(range(size * size))  # すべての要素のインデックスのリストを作成
-    random.shuffle(indices)  # インデックスをシャッフル
-    for i in range(del_count):
-        index = indices[i]
-        y = index // size
-        x = index % size
-        values[y][x] = 0
-    return values

@@ -1,8 +1,8 @@
 import azure.functions as func
 import logging
 from collections import Counter
-import math
-import random
+from math import sqrt
+from random import shuffle, randint
 import time
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
@@ -34,9 +34,9 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     return func.HttpResponse(result)
 
 
-##############
-## 実行部分 ##
-##############
+###########################
+## オーケストレーター関数 ##
+###########################
 def execute_process(size: int, del_num: int) -> str:
     start = time.time()   # 実行開始時間保存
     repeate = 0   # 問題を生成した回数
@@ -68,11 +68,11 @@ def execute_process(size: int, del_num: int) -> str:
 def prepare_block_check(size: int) -> list:
   panel = [[0 for i in range(size)] for j in range(size)] # 数独用のパネル
   
-  mass = int(math.sqrt(size))
+  mass = int(sqrt(size))
   for i in range(mass):
     xbase, ybase = mass * i, mass * i   # 対角線上の開始点が panel[ybase][xbase]となる
     numbers = list(range(1, size + 1))
-    random.shuffle(numbers)
+    shuffle(numbers)
 
     for y in range(ybase, ybase + mass):
       for x in range(xbase, xbase + mass):
@@ -89,7 +89,7 @@ def column_check(values: list, x: int, i: int, size: int) -> bool:
 
 # row x rowのブロックをチェック
 def block_check(values: list, x: int, y: int, i: int, size: int) -> bool:
-    mass = int(math.sqrt(size))
+    mass = int(sqrt(size))
     xbase, ybase = (x // mass) * mass,  (y // mass) * mass
     return all(i != values[_y][_x]
             for _y in range(ybase, ybase + mass)
@@ -131,7 +131,7 @@ def solver(values: list, size: int) -> bool:
 # 完成している数独から要素を削除する
 def draw_out(values: list, del_count: int, size: int) -> list:
     indices = list(range(size * size))  # すべての要素のインデックスのリストを作成
-    random.shuffle(indices)  # インデックスをシャッフル
+    shuffle(indices)  # インデックスをシャッフル
     for i in range(del_count):
         index = indices[i]
         y = index // size
