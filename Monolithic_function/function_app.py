@@ -1,104 +1,103 @@
 import azure.functions as func
 import logging
-import time
-from collections import Counter
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torchmetrics
+from torchmetrics.functional import accuracy
+from torchvision import transforms, datasets
+import pytorch_lightning as pl
+from pytorch_lightning.loggers import CSVLogger
+import pandas as pd
+
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
-activity_functions = {"failed", "sleep", "replace", "sort", "count_up", "delete"}
-SLEEP_TIMES = 10
-JOIN_TIMES = 10
-
-def get_param_from_request(req, param_name, json_key=None):
-    param = req.params.get(param_name)
-    if param is None:
-        try:
-            param = req.get_json().get(json_key or param_name)
-        except (ValueError, KeyError):
-            pass
-    return param
-
-##################
-## クライアント ##
-##################
-@app.route(route="main")
+@app.route(route="main", auth_level=func.AuthLevel.ANONYMOUS)
 def main(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('Python HTTP trigger function processed a request.')
-
-    # パラメータかjsonから値取得
-    process = get_param_from_request(req, "process")
-    if process not in activity_functions:
-        process = "failed"
-    char = get_param_from_request(req, "char")
-    string = get_param_from_request(req, "string")
-
-    # 関数呼び出し
-    result = execute_process(process, char, string)
-
-    return func.HttpResponse(result)
-
-#########################
-## オーケストレーション ##
-#########################
-def execute_process(process, char, string):
-    if process in {"failed", "sleep"}:
-        result = globals()[process]()
-    else:
-        strings = join(string)
-        inputs = {"char": char, "strings": strings}
-        result = globals()[process](inputs)
-
-    return result
-
-
-#########################
-##  アクティビティ関数  ##
-#########################
-def failed():
-    return "failed_function executed successfully."
-
-def sleep():
-        time.sleep(SLEEP_TIMES)
-        return f"It was stopped for {SLEEP_TIMES} seconds."
-
-# 文字列長変更
-def join(string):
-    strings = " ".join([string] * JOIN_TIMES)
-    return strings
-
-#charを,設定した文字列に置換 (if文でさらに細分化し文字列を設定)
-def replace(inputs):
-    char = inputs["char"]
-    strings = inputs["strings"]
-
-    if 'a' <= char[0] <= 'i':
-        replacement = 'test1'
-    elif 'j' <= char[0] <= 's':
-        replacement = 'test2'
-    else:
-        replacement = 'test3'
-
-    strings = strings.replace(char, replacement)
-    return f"The character {char} was converted => {strings}."
-
-#charを削除        
-def delete(inputs):
-    char = inputs["char"]
-    strings = inputs["strings"]
-    strings = strings.replace(char, '')
-    return f"The character {char} was delated => {strings}."
     
-#charの出現回数
-def count_up(inputs):
-    char = inputs["char"]
-    strings = inputs["strings"]
-    char_count = strings.count(char)
-    return f"The character '{char}' appears {char_count} times."
-    
-#回数ソート
-def sort(inputs):
-        strings = inputs["strings"]
-        words = strings.split()
-        word_counts = Counter(words)
-        sorted_word_counts = sorted(word_counts.items(), key=lambda x: x[1], reverse=True)
-        result = '\n'.join([f"{word}: {count}" for word, count in sorted_word_counts])
-        return result
+    # データセットの変換を定義
+    transform = transforms.Compose([
+        transforms.ToTensor()
+    ])
+
+    # データセットの取得
+    train_val = datasets.MNIST('./', train=True, download=True, transform=transform)
+    test = datasets.MNIST('./', train=False, download=True, transform=transform)
+
+    # train と val に分割
+    n_train = 50000
+    n_val = 10000
+    torch.manual_seed(0)
+    train, val = torch.utils.data.random_split(train_val, [n_train, n_val])
+
+    # バッチサイズの定義
+    batch_size = 256  # 適切なバッチサイズに調整
+
+    # Data Loader を定義
+    train_loader = torch.utils.data.DataLoader(train, batch_size=batch_size, shuffle=True, drop_last=True)
+    val_loader = torch.utils.data.DataLoader(val, batch_size=batch_size)
+    test_loader = torch.utils.data.DataLoader(test, batch_size=batch_size)
+
+
+    pl.seed_everything(0)
+    class Net(pl.LightningModule):
+        def __init__(self):
+            super().__init__()
+
+            self.conv = nn.Conv2d(in_channels=1, out_channels=3, kernel_size=3, padding=1)
+            self.bn = nn.BatchNorm2d(3)
+            self.fc = nn.Linear(588, 10)  # 入力サイズを修正
+
+        def forward(self, x):
+            h = self.conv(x)
+            h = F.relu(h)
+            h = self.bn(h)
+            h = F.max_pool2d(h, kernel_size=2, stride=2)
+            h = h.view(-1, 588)
+            h = self.fc(h)
+            return h
+
+        def training_step(self, batch, batch_idx):
+            x, t = batch
+            y = self(x)
+            loss = F.cross_entropy(y, t)
+            train_acc = accuracy(y.argmax(dim=-1), t, task='multiclass', num_classes=10, top_k=1)
+            self.log('train_loss', loss, on_step=True, on_epoch=True, prog_bar=True)
+            self.log('train_acc', train_acc, on_step=False, on_epoch=True, prog_bar=True)
+            return loss
+
+        def validation_step(self, batch, batch_idx):
+            x, t = batch
+            y = self(x)
+            loss = F.cross_entropy(y, t)
+            val_acc = accuracy(y.argmax(dim=-1), t, task='multiclass', num_classes=10, top_k=1)
+            self.log('val_loss', loss, on_step=False, on_epoch=True)
+            self.log('val_acc', val_acc, on_step=False, on_epoch=True, prog_bar=True)
+            return loss
+
+        def test_step(self, batch, batch_idx):
+            x, t = batch
+            y = self(x)
+            loss = F.cross_entropy(y, t)
+            test_acc = accuracy(y.argmax(dim=-1), t, task='multiclass', num_classes=10, top_k=1)
+            self.log('test_loss', loss, on_step=False, on_epoch=True)
+            self.log('test_acc', test_acc, on_step=False, on_epoch=True, prog_bar=True)
+            return loss
+
+        def configure_optimizers(self):
+            optimizer = torch.optim.Adam(self.parameters(), lr=0.01)  # 学習率を調整
+            return optimizer
+        
+    # 学習の実行
+    pl.seed_everything(0)
+    net = Net()
+    logger = CSVLogger(save_dir='logs', name='my_exp')
+    trainer = pl.Trainer(max_epochs=3, deterministic=True, logger=logger)
+    trainer.fit(net, train_loader, val_loader)
+
+    # テストデータでモデルを評価
+    results = trainer.test(dataloaders=test_loader)
+
+    return func.HttpResponse(results)

@@ -48,7 +48,9 @@ def execute_process(size: int, del_num: int) -> str:
 def execute_activity(size: int, del_num: int) -> str:
     start = time.time()   # 実行開始時間保存
     repeate = 0   # 問題を生成した回数
-    while True:  
+    bool_val = False  # bool_val 変数を初期化
+
+    while not bool_val:  # bool_val が False の間ループ
         # prepare_block_check
         data = [[0 for i in range(size)] for j in range(size)] # 数独用のパネル
         mass = int(sqrt(size))
@@ -63,29 +65,32 @@ def execute_activity(size: int, del_num: int) -> str:
         repeate += 1
 
         # solver
-        bool_val = True
         stack = []  # スタックを用意
-        min_x, min_y, panel = count(data, size)  # 初期の情報を取得
-        while min_x != -1:  # 終了条件が満たされるまでループ
-            data[min_y][min_x] = panel.pop()  # 数字を入れる
-            # スタックに現在の状態を保存
-            stack.append((data, size, min_x, min_y, panel))
-            min_x, min_y, panel = count(data, size)  # 次の情報を取得
-            while not panel:  # 入れる数字がなくなった場合
-                if not stack:
-                    bool_val = False  # スタックが空の場合、解なし
-                data, size, min_x, min_y, panel = stack.pop()  # スタックから前の状態を復元
+        min_x, min_y, panel = count(data, size)  # 入れられる数の少ないインデックス取得
 
-        if bool_val: break
+        while not bool_val:
+            if min_x == -1:  # 終了条件
+                bool_val = True
+
+            if panel:
+                data[min_y][min_x] = panel.pop()  # 数字を入れる
+                stack.append((min_x, min_y, panel.copy()))  # 現在の状態をスタックに保存
+            else:
+                while not panel and stack:
+                    prev_x, prev_y, prev_panel = stack.pop()  # スタックから前の状態を取得
+                    data[prev_y][prev_x] = 0  # 戻ってきたら0に戻す
+                    panel = prev_panel  # 入れる数字がなくなるまでスタックから前の状態を取得
+
+            if not panel and not stack:
+                bool_val = True
+
     performance_time = time.time() - start
-
 
     result = []  # 画面出力を格納するリスト
     result = [f"数独を生成した回数：{repeate}\n", f"実行時間 : {performance_time}\n"]
     for a in data:
         result.append(" ".join(map(str, a)))
     result.append("")  # 空行を追加
-
 
     # draw_out
     indices = list(range(size * size))  # すべての要素のインデックスのリストを作成
@@ -100,6 +105,7 @@ def execute_activity(size: int, del_num: int) -> str:
     for a in data:
         result.append(" ".join(map(str, a)))
     return "\n".join(result)  # 改行を挟んでリストを文字列に変換して返す
+
 
 
 # 横をチェック
