@@ -7,4 +7,3 @@ torch
 pytorch-lightning
 torchvision
 torchmetrics
-pandas
