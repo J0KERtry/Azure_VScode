@@ -1,15 +1,11 @@
 import azure.functions as func
 import logging
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torchmetrics
-from torchmetrics.functional import accuracy
-from torchvision import transforms, datasets
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import CSVLogger
-import pandas as pd
+from torchvision import transforms, datasets
 
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
@@ -18,9 +14,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('Python HTTP trigger function processed a request.')
     
     # データセットの変換を定義
-    transform = transforms.Compose([
-        transforms.ToTensor()
-    ])
+    transform = transforms.Compose([transforms.ToTensor()])
 
     # データセットの取得
     train_val = datasets.MNIST('./', train=True, download=True, transform=transform)
@@ -63,7 +57,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             x, t = batch
             y = self(x)
             loss = F.cross_entropy(y, t)
-            train_acc = accuracy(y.argmax(dim=-1), t, task='multiclass', num_classes=10, top_k=1)
+            train_acc = pl.metrics.functional.accuracy(y.argmax(dim=-1), t, task='multiclass', num_classes=10, top_k=1)
             self.log('train_loss', loss, on_step=True, on_epoch=True, prog_bar=True)
             self.log('train_acc', train_acc, on_step=False, on_epoch=True, prog_bar=True)
             return loss
@@ -72,7 +66,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             x, t = batch
             y = self(x)
             loss = F.cross_entropy(y, t)
-            val_acc = accuracy(y.argmax(dim=-1), t, task='multiclass', num_classes=10, top_k=1)
+            val_acc = pl.metrics.functional.accuracy(y.argmax(dim=-1), t, task='multiclass', num_classes=10, top_k=1)
             self.log('val_loss', loss, on_step=False, on_epoch=True)
             self.log('val_acc', val_acc, on_step=False, on_epoch=True, prog_bar=True)
             return loss
@@ -81,7 +75,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             x, t = batch
             y = self(x)
             loss = F.cross_entropy(y, t)
-            test_acc = accuracy(y.argmax(dim=-1), t, task='multiclass', num_classes=10, top_k=1)
+            test_acc = pl.metrics.functional.accuracy(y.argmax(dim=-1), t, task='multiclass', num_classes=10, top_k=1)
             self.log('test_loss', loss, on_step=False, on_epoch=True)
             self.log('test_acc', test_acc, on_step=False, on_epoch=True, prog_bar=True)
             return loss

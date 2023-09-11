@@ -1,130 +1,82 @@
 import azure.functions as func
-import azure.durable_functions as df
-import time
 import logging
-from collections import Counter
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import pytorch_lightning as pl
+from pytorch_lightning.loggers import CSVLogger
+from torchvision import transforms, datasets
 
-app = df.DFApp(http_auth_level=func.AuthLevel.ANONYMOUS)
-activity_functions = {"failed", "sleep", "replace", "sort", "count_up", "delete"}
-SLEEP_TIMES = 10
-JOIN_TIMES = 10
+# データセットのダウンロードと前処理
+transform = transforms.Compose([transforms.ToTensor()])
+train_val = datasets.MNIST('./', train=True, download=True, transform=transform)
+test = datasets.MNIST('./', train=False, download=True, transform=transform)
+n_train = 50000
+n_val = 10000
+torch.manual_seed(0)
+train, val = torch.utils.data.random_split(train_val, [n_train, n_val])
 
-def get_param_from_request(req, param_name, json_key=None):
-    param = req.params.get(param_name)
-    if param is None:
-        try:
-            param = req.get_json().get(json_key or param_name)
-        except (ValueError, KeyError):
-            pass
-    return param
+batch_size = 256
 
-############
-## Cliant ##
-############
-@app.route(route="orchestrators/client_function")
-@app.durable_client_input(client_name="client")
-async def client_function(req: func.HttpRequest, client: df.DurableOrchestrationClient) -> func.HttpResponse:
-    # HTTPリクエストからパラメータを取得
-    process = get_param_from_request(req, "process")
-    if process not in activity_functions:
-        process = "failed"
-    char = get_param_from_request(req, "char")
-    string = get_param_from_request(req, "string")
+train_loader = torch.utils.data.DataLoader(train, batch_size=batch_size, shuffle=True, drop_last=True)
+val_loader = torch.utils.data.DataLoader(val, batch_size=batch_size)
+test_loader = torch.utils.data.DataLoader(test, batch_size=batch_size)
 
-    # オーケストレーションの起動
-    instance_id = await client.start_new("orchestrator", None, {
-        "process": process,
-        "char": char,
-        "string": string
-    })
-    logging.info(f"Started orchestration with ID = '{instance_id}'.")
+pl.seed_everything(0)
+
+# モデルの定義
+class Net(pl.LightningModule):
+    def __init__(self):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Conv2d(1, 3, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.BatchNorm2d(3),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            nn.Flatten(),
+            nn.Linear(588, 10)
+        )
+
+    def forward(self, x):
+        return self.net(x)
+
+    # トレーニング、検証、テストのステップを共通化
+    def common_step(self, batch, batch_idx, step_name):
+        x, t = batch
+        y = self(x)
+        loss = F.cross_entropy(y, t)
+        acc = pl.metrics.functional.accuracy(y.argmax(dim=-1), t)
+        self.log(f'{step_name}_loss', loss, on_step=False, on_epoch=True)
+        self.log(f'{step_name}_acc', acc, on_step=False, on_epoch=True, prog_bar=True)
+        return loss
+
+    def training_step(self, batch, batch_idx):
+        return self.common_step(batch, batch_idx, 'train')
+
+    def validation_step(self, batch, batch_idx):
+        return self.common_step(batch, batch_idx, 'val')
+
+    def test_step(self, batch, batch_idx):
+        return self.common_step(batch, batch_idx, 'test')
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam(self.parameters(), lr=0.01)
+        return optimizer
+
+
+
+
+# Azure Functionsルート
+app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
+
+@app.route(route="main", auth_level=func.AuthLevel.ANONYMOUS)
+def main(req: func.HttpRequest) -> func.HttpResponse:
+    logging.info('Python HTTP trigger function processed a request.')
+
+    net = Net()
+    logger = CSVLogger(save_dir='logs', name='my_exp')
+    trainer = pl.Trainer(max_epochs=3, deterministic=True, logger=logger)
+    trainer.fit(net, train_loader, val_loader)
+    results = trainer.test(dataloaders=test_loader)
     
-    # オーケストレーションの完了を待機
-    await client.wait_for_completion_or_create_check_status_response(req, instance_id)
-
-    # オーケストレーションの実行状態を取得
-    status = await client.get_status(instance_id)
-
-    # オーケストレーションの実行結果を取得
-    runtime = status.runtime_status
-    input_ = status.input_
-    output = status.output
-    return f"runtime: {runtime}\n\ninput_:{input_}\n\noutput:{output}" 
-
-
-##################
-## Orchestrator ##
-##################
-@app.orchestration_trigger(context_name="context")
-def orchestrator(context: df.DurableOrchestrationContext) -> str:
-    # クライアント関数から値取得
-    parameters = context.get_input()
-    process = parameters.get("process")
-    char = parameters.get("char")
-    string = parameters.get("string")
-
-    # アクティビティ関数の振り分け
-    if process in {"failed", "sleep"}:
-        result = yield context.call_activity(process, "")
-    else:
-        strings = yield context.call_activity("join", string)
-        inputs = {"char": char, "strings": strings}
-        result = yield context.call_activity(process, inputs)
-    
-    # クライアント関数へ値渡す
-    context.set_custom_status(result)
-    return result
-
-
-##############
-## Activity ##
-##############
-@app.activity_trigger(input_name="inputs")
-def failed(inputs: dict) -> str:
-    return "failed_function executed successfully."
-
-@app.activity_trigger(input_name="inputs")
-def sleep(inputs: dict) -> str:
-    time.sleep(SLEEP_TIMES)
-    return f"It was stopped for {SLEEP_TIMES} seconds."
-
-@app.activity_trigger(input_name="string")
-def join(string: str) -> str:
-    strings = " ".join([string] * JOIN_TIMES)
-    return strings
-
-@app.activity_trigger(input_name="inputs")
-def replace(inputs: dict) -> str:
-    char = inputs["char"]
-    strings = inputs["strings"]
-    if 'a' <= char[0] <= 'i':
-        replacement = 'a~i'
-    elif 'j' <= char[0] <= 's':
-        replacement = 'j~s'
-    else:
-        replacement = 't~z'
-    strings = strings.replace(char, replacement)
-    return f"The character [{char}] was converted => [{strings}]."
-
-@app.activity_trigger(input_name="inputs")
-def delete(inputs: dict) -> str:
-    char = inputs["char"]
-    strings = inputs["strings"]
-    strings = strings.replace(char, '')
-    return f"The character [{char}] was deleted => [{strings}]."
-
-@app.activity_trigger(input_name="inputs")
-def count_up(inputs: dict) -> str:
-    char = inputs["char"]
-    strings = inputs["strings"]
-    char_count = strings.count(char)
-    return f"The character [{char}] appears {char_count} times."
-
-@app.activity_trigger(input_name="inputs")
-def sort(inputs: dict) -> str:
-    strings = inputs["strings"]
-    words = strings.split()
-    word_counts = Counter(words)
-    sorted_word_counts = sorted(word_counts.items(), key=lambda x: x[1], reverse=True)
-    result = '\n'.join([f"{word}: {count}" for word, count in sorted_word_counts])
-    return result
+    return func.HttpResponse(results)
