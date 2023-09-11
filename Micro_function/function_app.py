@@ -6,13 +6,13 @@ import torch.nn.functional as F
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import CSVLogger
 from torchvision import transforms, datasets
+from torchmetrics.functional import accuracy
 
 # データセットのダウンロードと前処理
 transform = transforms.Compose([transforms.ToTensor()])
 train_val = datasets.MNIST('./', train=True, download=True, transform=transform)
 test = datasets.MNIST('./', train=False, download=True, transform=transform)
-n_train = 50000
-n_val = 10000
+n_train, n_val = 50000, 10000
 torch.manual_seed(0)
 train, val = torch.utils.data.random_split(train_val, [n_train, n_val])
 
@@ -29,12 +29,10 @@ class Net(pl.LightningModule):
     def __init__(self):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Conv2d(1, 3, kernel_size=3, padding=1),
-            nn.ReLU(),
+            nn.Conv2d(in_channels=1, out_channels=3, kernel_size=3, padding=1),
             nn.BatchNorm2d(3),
-            nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.Flatten(),
-            nn.Linear(588, 10)
+            nn.Flatten(),  # フラット化レイヤーを追加
+            nn.Linear(2352, 10)  # 入力サイズを784に修正
         )
 
     def forward(self, x):
@@ -45,7 +43,7 @@ class Net(pl.LightningModule):
         x, t = batch
         y = self(x)
         loss = F.cross_entropy(y, t)
-        acc = pl.metrics.functional.accuracy(y.argmax(dim=-1), t)
+        acc = accuracy(y.argmax(dim=-1), t, task='multiclass', num_classes=10, top_k=1)
         self.log(f'{step_name}_loss', loss, on_step=False, on_epoch=True)
         self.log(f'{step_name}_acc', acc, on_step=False, on_epoch=True, prog_bar=True)
         return loss
@@ -75,8 +73,8 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
 
     net = Net()
     logger = CSVLogger(save_dir='logs', name='my_exp')
-    trainer = pl.Trainer(max_epochs=3, deterministic=True, logger=logger)
+    trainer = pl.Trainer(max_epochs=1, deterministic=True, logger=logger)
     trainer.fit(net, train_loader, val_loader)
     results = trainer.test(dataloaders=test_loader)
     
-    return func.HttpResponse(results)
+    return func.HttpResponse(str(results))
