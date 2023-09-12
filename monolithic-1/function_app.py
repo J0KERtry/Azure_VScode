@@ -10,9 +10,8 @@ from torchmetrics.functional import accuracy
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 
-################
-## メイン関数 ##
-################
+# -----------------------------------------------------------------------------------------------------------
+# メイン関数 
 @app.route(route="main")
 def main(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('Python HTTP trigger function processed a request.')
@@ -32,9 +31,8 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     return func.HttpResponse(str(results))
 
 
-##########
-## 関数 ##
-##########
+# -----------------------------------------------------------------------------------------------------------
+# 関数
 def pre_processing():
     # データセットの変換を定義
     transform = transforms.Compose([transforms.ToTensor()])
