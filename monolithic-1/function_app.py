@@ -16,23 +16,25 @@ app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 @app.route(route="main")
 def main(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('Python HTTP trigger function processed a request.')
-    param = req.params.get(param, "param")
 
     # 前処理
     train_loader, val_loader, test_loader = pre_processing()
 
     # 学習の実行
     net = Net()
-    trainer = learn(train_loader, val_loader, net)
+    logger = CSVLogger(save_dir='logs', name='my_exp')
+    trainer = pl.Trainer(max_epochs=1, deterministic=True, logger=logger)
+    trainer.fit(net, train_loader, val_loader)
 
     # テストデータで評価
-    results = evaluation(test_loader, trainer)
+    results = trainer.test(dataloaders=test_loader)
 
     return func.HttpResponse(str(results))
 
 
-
-
+##########
+## 関数 ##
+##########
 def pre_processing():
     # データセットの変換を定義
     transform = transforms.Compose([transforms.ToTensor()])
