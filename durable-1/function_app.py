@@ -9,9 +9,8 @@ from pytorch_lightning.loggers import CSVLogger
 from torchvision import transforms, datasets
 from torchmetrics.functional import accuracy
 
-
 app = df.DFApp(http_auth_level=func.AuthLevel.ANONYMOUS)
-# -----------------------------------------------------------------------------------------------------------
+#=========================================================================================================
 # クライアント関数 
 @app.route(route="orchestrators/client_function")
 @app.durable_client_input(client_name="client")
@@ -34,28 +33,34 @@ async def client_function(req: func.HttpRequest, client: df.DurableOrchestration
     return f"runtime: {runtime}\n\ninput_:{input_}\n\noutput:{output}" 
 
 
-# -----------------------------------------------------------------------------------------------------------
+#=========================================================================================================
 # オーケストレーター関数
 @app.orchestration_trigger(context_name="context")
 def orchestrator(context: df.DurableOrchestrationContext) -> str:
     # 前処理
-    train_loader, val_loader, test_loader = pre_processing()
+    train, val, test = context.call_activity("pre_processing")
 
-    # 学習の実行
     net = Net()
     logger = CSVLogger(save_dir='logs', name='my_exp')
-    trainer = pl.Trainer(max_epochs=1, deterministic=True, logger=logger)
-    trainer.fit(net, train_loader, val_loader)
+
+    # 学習の実行
+    batch_size = 256
+    trainer = pl.Trainer(max_epochs=3, deterministic=True, logger=logger)
+    inputs = { "net": net, "trainer": trainer, "train": train, "val": val, "logger": logger, "batch_size": batch_size }
+    yield context.call_activity("train_activity", inputs)
 
     # テストデータで評価
-    results = trainer.test(dataloaders=test_loader)
-
+    inputs = { "trainer": trainer, "test": test, "batch_size": batch_size }
+    results = context.call_activity("evaluation", inputs)
     return str(results)
 
 
-# -----------------------------------------------------------------------------------------------------------
+#=========================================================================================================
 # アクティビティ関数
-def pre_processing():
+
+# データセットの準備
+@app.activity_trigger(input_name="inputs")
+def pre_processing(inputs: dict) -> list:
     # データセットの変換を定義
     transform = transforms.Compose([transforms.ToTensor()])
     train_val = datasets.MNIST('./', train=True, download=True, transform=transform)
@@ -66,15 +71,7 @@ def pre_processing():
     torch.manual_seed(0)
     train, val = torch.utils.data.random_split(train_val, [n_train, n_val])
 
-    # バッチサイズの定義
-    batch_size = 256
-
-    # Data Loader を定義
-    train_loader = torch.utils.data.DataLoader(train, batch_size=batch_size, shuffle=True, drop_last=True)
-    val_loader = torch.utils.data.DataLoader(val, batch_size=batch_size)
-    test_loader = torch.utils.data.DataLoader(test, batch_size=batch_size)
-    
-    return train_loader, val_loader, test_loader
+    return [train, val, test]
 
 class Net(pl.LightningModule):
     def __init__(self):
@@ -123,7 +120,32 @@ class Net(pl.LightningModule):
         optimizer = torch.optim.Adam(self.parameters(), lr=0.001)  # 学習率を調整
         return optimizer
 
+@app.activity_trigger(input_name="inputs")
+def train_activity(inputs: dict):
+    net = inputs["net"]
+    trainer = inputs["trainer"]
+    train = inputs["train"]
+    val = inputs["val"]
+    batch_size = inputs["batch_size"]
+    logger = inputs["logger"]
+
+    # Data Loader を定義
+    train_loader = torch.utils.data.DataLoader(train, batch_size=batch_size, shuffle=True, drop_last=True)
+    val_loader = torch.utils.data.DataLoader(val, batch_size=batch_size)
+    
+    # 一部のエポックだけ学習を実行
+    trainer.fit(net, train_loader, val_loader)
+   
+    # 必要な結果を返す
+    return trainer.logged_metrics
+
 # テストデータでモデルを評価
-def evaluation(test_loader, trainer):
+@app.activity_trigger(input_name="inputs")
+def evaluation(inputs: dict) -> str:  # 返り値[['test_loss': 0.0988..., 'test_acc': 0.9696...]]
+    trainer = inputs["trainer"]
+    test = inputs["test"]
+    batch_size = ["batch_size"]
+
+    test_loader = torch.utils.data.DataLoader(test, batch_size=batch_size)
     results = trainer.test(dataloaders=test_loader)
-    return func.HttpResponse(str(results))
+    return str(results)
