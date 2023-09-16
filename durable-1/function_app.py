@@ -10,6 +10,53 @@ from torchvision import transforms, datasets
 from torchmetrics.functional import accuracy
 
 app = df.DFApp(http_auth_level=func.AuthLevel.ANONYMOUS)
+class Net(pl.LightningModule):
+    def __init__(self):
+        super().__init__()
+        self.conv = nn.Conv2d(in_channels=1, out_channels=3, kernel_size=3, padding=1)
+        self.bn = nn.BatchNorm2d(3)
+        self.fc = nn.Linear(588, 10)  # 入力サイズを修正
+
+    def forward(self, x):
+        h = self.conv(x)
+        h = F.relu(h)
+        h = self.bn(h)
+        h = F.max_pool2d(h, kernel_size=2, stride=2)
+        h = h.view(-1, 588)
+        h = self.fc(h)
+        return h
+    
+    def training_step(self, batch, batch_idx):
+        x, t = batch
+        y = self(x)
+        loss = F.cross_entropy(y, t)
+        train_acc = accuracy(y.argmax(dim=-1), t, task='multiclass', num_classes=10, top_k=1)
+        self.log('train_loss', loss, on_step=True, on_epoch=True, prog_bar=True)
+        self.log('train_acc', train_acc, on_step=False, on_epoch=True, prog_bar=True)
+        return loss
+    
+    def validation_step(self, batch, batch_idx):
+        x, t = batch
+        y = self(x)
+        loss = F.cross_entropy(y, t)
+        val_acc = accuracy(y.argmax(dim=-1), t, task='multiclass', num_classes=10, top_k=1)
+        self.log('val_loss', loss, on_step=False, on_epoch=True)
+        self.log('val_acc', val_acc, on_step=False, on_epoch=True, prog_bar=True)
+        return loss
+    
+    def test_step(self, batch, batch_idx):
+        x, t = batch
+        y = self(x)
+        loss = F.cross_entropy(y, t)
+        test_acc = accuracy(y.argmax(dim=-1), t, task='multiclass', num_classes=10, top_k=1)
+        self.log('test_loss', loss, on_step=False, on_epoch=True)
+        self.log('test_acc', test_acc, on_step=False, on_epoch=True, prog_bar=True)
+        return loss
+    
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam(self.parameters(), lr=0.001)  # 学習率を調整
+        return optimizer
+
 #=========================================================================================================
 # クライアント関数 
 @app.route(route="orchestrators/client_function")
@@ -72,53 +119,6 @@ def pre_processing(inputs: dict) -> list:
     train, val = torch.utils.data.random_split(train_val, [n_train, n_val])
 
     return [train, val, test]
-
-class Net(pl.LightningModule):
-    def __init__(self):
-        super().__init__()
-        self.conv = nn.Conv2d(in_channels=1, out_channels=3, kernel_size=3, padding=1)
-        self.bn = nn.BatchNorm2d(3)
-        self.fc = nn.Linear(588, 10)  # 入力サイズを修正
-
-    def forward(self, x):
-        h = self.conv(x)
-        h = F.relu(h)
-        h = self.bn(h)
-        h = F.max_pool2d(h, kernel_size=2, stride=2)
-        h = h.view(-1, 588)
-        h = self.fc(h)
-        return h
-    
-    def training_step(self, batch, batch_idx):
-        x, t = batch
-        y = self(x)
-        loss = F.cross_entropy(y, t)
-        train_acc = accuracy(y.argmax(dim=-1), t, task='multiclass', num_classes=10, top_k=1)
-        self.log('train_loss', loss, on_step=True, on_epoch=True, prog_bar=True)
-        self.log('train_acc', train_acc, on_step=False, on_epoch=True, prog_bar=True)
-        return loss
-    
-    def validation_step(self, batch, batch_idx):
-        x, t = batch
-        y = self(x)
-        loss = F.cross_entropy(y, t)
-        val_acc = accuracy(y.argmax(dim=-1), t, task='multiclass', num_classes=10, top_k=1)
-        self.log('val_loss', loss, on_step=False, on_epoch=True)
-        self.log('val_acc', val_acc, on_step=False, on_epoch=True, prog_bar=True)
-        return loss
-    
-    def test_step(self, batch, batch_idx):
-        x, t = batch
-        y = self(x)
-        loss = F.cross_entropy(y, t)
-        test_acc = accuracy(y.argmax(dim=-1), t, task='multiclass', num_classes=10, top_k=1)
-        self.log('test_loss', loss, on_step=False, on_epoch=True)
-        self.log('test_acc', test_acc, on_step=False, on_epoch=True, prog_bar=True)
-        return loss
-    
-    def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=0.001)  # 学習率を調整
-        return optimizer
 
 @app.activity_trigger(input_name="inputs")
 def train_activity(inputs: dict):

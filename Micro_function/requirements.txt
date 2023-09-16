@@ -4,7 +4,3 @@
 
 azure-functions
 azure-functions-durable
-torch
-pytorch-lightning
-torchvision
-torchmetrics
