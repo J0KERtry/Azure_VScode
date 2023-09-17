@@ -1,8 +1,8 @@
+### コールドスタートの応答速度検証 ###
+
 import azure.functions as func
 import azure.durable_functions as df
 import logging
-
-# コールドスタートの応答速度検証
 
 app = df.DFApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 @app.route(route="orchestrators/client_function")
