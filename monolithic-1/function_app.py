@@ -63,7 +63,6 @@ class Net(pl.LightningModule):
 def main(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('Python HTTP trigger function processed a request.')
 
-    # 前処理
     # データセットの変換を定義
     transform = transforms.Compose([transforms.ToTensor()])
     train_val = datasets.MNIST('./', train=True, download=True, transform=transform)
@@ -82,26 +81,16 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     val_loader = torch.utils.data.DataLoader(val, batch_size=batch_size)
     test_loader = torch.utils.data.DataLoader(test, batch_size=batch_size)
 
-
-
     # 学習の実行
     net = Net()
     logger = CSVLogger(save_dir='logs', name='my_exp')
     trainer = pl.Trainer(max_epochs=1, deterministic=True, logger=logger)
     trainer.fit(net, train_loader, val_loader)
 
-
     # テストデータで評価
     results = trainer.test(dataloaders=test_loader)
 
     return func.HttpResponse(str(results))
 
-
 # -----------------------------------------------------------------------------------------------------------
-# 関数
-
-
-# テストデータでモデルを評価
-def evaluation(test_loader, trainer):
-    results = trainer.test(dataloaders=test_loader)
-    return func.HttpResponse(str(results))
+# 関数群
