@@ -84,21 +84,32 @@ async def client_function(req: func.HttpRequest, client: df.DurableOrchestration
 # オーケストレーター関数
 @app.orchestration_trigger(context_name="context")
 def orchestrator(context: df.DurableOrchestrationContext) -> str:
-    # 前処理
-    train, val, test = context.call_activity("pre_processing")
 
+    # データセットの変換を定義
+    transform = transforms.Compose([transforms.ToTensor()])
+    train_val = datasets.MNIST('./', train=True, download=True, transform=transform)
+    test = datasets.MNIST('./', train=False, download=True, transform=transform)
+
+    # train と val に分割
+    n_train,n_val = 50000, 10000
+    torch.manual_seed(0)
+    train, val = torch.utils.data.random_split(train_val, [n_train, n_val])
+
+    # Data Loader を定義
+    batch_size = 256
+    train_loader = torch.utils.data.DataLoader(train, batch_size=batch_size, shuffle=True, drop_last=True)
+    val_loader = torch.utils.data.DataLoader(val, batch_size=batch_size)
+    test_loader = torch.utils.data.DataLoader(test, batch_size=batch_size)
+    
+    # 学習の実行
     net = Net()
     logger = CSVLogger(save_dir='logs', name='my_exp')
-
-    # 学習の実行
-    batch_size = 256
     trainer = pl.Trainer(max_epochs=3, deterministic=True, logger=logger)
-    inputs = { "net": net, "trainer": trainer, "train": train, "val": val, "logger": logger, "batch_size": batch_size }
-    yield context.call_activity("train_activity", inputs)
+    trainer.fit(net, train_loader, val_loader)
 
     # テストデータで評価
-    inputs = { "trainer": trainer, "test": test, "batch_size": batch_size }
-    results = context.call_activity("evaluation", inputs)
+    results = trainer.test(dataloaders=test_loader)
+    
     return str(results)
 
 
