@@ -27,13 +27,11 @@ async def client_function(req: func.HttpRequest, client: df.DurableOrchestration
     return f"runtime: {runtime}\n\ninput_:{input_}\n\noutput:{output}" 
 
 
-
 @app.orchestration_trigger(context_name="context")
 def orchestrator(context: df.DurableOrchestrationContext):
     context.call_activity("activity1")
-    time.sleep(10)
+    time.sleep(0.1)
     return "end_orchestration"
-
 
 
 @app.activity_trigger(input_name="inputs")
