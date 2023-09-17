@@ -1,3 +1,5 @@
+#### 画像認識 ####
+
 import azure.functions as func
 import logging
 import torch
@@ -7,6 +9,7 @@ import pytorch_lightning as pl
 from pytorch_lightning.loggers import CSVLogger
 from torchvision import transforms, datasets
 from torchmetrics.functional import accuracy
+import os
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 
@@ -62,6 +65,9 @@ class Net(pl.LightningModule):
 @app.route(route="main")
 def main(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('Python HTTP trigger function processed a request.')
+
+    if not os.path.exists("logs"):
+        os.makedirs("logs")
 
     # データセットの変換を定義
     transform = transforms.Compose([transforms.ToTensor()])

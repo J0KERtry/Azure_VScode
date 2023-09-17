@@ -4,9 +4,8 @@
 
 azure-functions
 azure-functions-durable
-requests
--f https://download.pytorch.org/whl/torch_stable.html
-torch==2.0.1+cpu
-pytorch-lightning
-torchvision==0.15.2+cpu
-torchmetrics
+numpy
+pandas
+seaborn
+matplotlib
+scikit-learn
