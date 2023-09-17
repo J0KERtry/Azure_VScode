@@ -10,50 +10,6 @@ from torchmetrics.functional import accuracy
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 
-# -----------------------------------------------------------------------------------------------------------
-# メイン関数 
-@app.route(route="main")
-def main(req: func.HttpRequest) -> func.HttpResponse:
-    logging.info('Python HTTP trigger function processed a request.')
-
-    # 前処理
-    train_loader, val_loader, test_loader = pre_processing()
-
-    # 学習の実行
-    net = Net()
-    logger = CSVLogger(save_dir='logs', name='my_exp')
-    trainer = pl.Trainer(max_epochs=1, deterministic=True, logger=logger)
-    trainer.fit(net, train_loader, val_loader)
-
-    # テストデータで評価
-    results = trainer.test(dataloaders=test_loader)
-
-    return func.HttpResponse(str(results))
-
-
-# -----------------------------------------------------------------------------------------------------------
-# 関数
-def pre_processing():
-    # データセットの変換を定義
-    transform = transforms.Compose([transforms.ToTensor()])
-    train_val = datasets.MNIST('./', train=True, download=True, transform=transform)
-    test = datasets.MNIST('./', train=False, download=True, transform=transform)
-
-    # train と val に分割
-    n_train,n_val = 50000, 10000
-    torch.manual_seed(0)
-    train, val = torch.utils.data.random_split(train_val, [n_train, n_val])
-
-    # バッチサイズの定義
-    batch_size = 256
-
-    # Data Loader を定義
-    train_loader = torch.utils.data.DataLoader(train, batch_size=batch_size, shuffle=True, drop_last=True)
-    val_loader = torch.utils.data.DataLoader(val, batch_size=batch_size)
-    test_loader = torch.utils.data.DataLoader(test, batch_size=batch_size)
-    
-    return train_loader, val_loader, test_loader
-
 class Net(pl.LightningModule):
     def __init__(self):
         super().__init__()
@@ -101,12 +57,49 @@ class Net(pl.LightningModule):
         optimizer = torch.optim.Adam(self.parameters(), lr=0.01)  # 学習率を調整
         return optimizer
 
-# 学習の実行  
-def learn(train_loader, val_loader, net):
+# -----------------------------------------------------------------------------------------------------------
+# メイン関数 
+@app.route(route="main")
+def main(req: func.HttpRequest) -> func.HttpResponse:
+    logging.info('Python HTTP trigger function processed a request.')
+
+    # 前処理
+    # データセットの変換を定義
+    transform = transforms.Compose([transforms.ToTensor()])
+    train_val = datasets.MNIST('./', train=True, download=True, transform=transform)
+    test = datasets.MNIST('./', train=False, download=True, transform=transform)
+
+    # train と val に分割
+    n_train,n_val = 50000, 10000
+    torch.manual_seed(0)
+    train, val = torch.utils.data.random_split(train_val, [n_train, n_val])
+
+    # バッチサイズの定義
+    batch_size = 256
+
+    # Data Loader を定義
+    train_loader = torch.utils.data.DataLoader(train, batch_size=batch_size, shuffle=True, drop_last=True)
+    val_loader = torch.utils.data.DataLoader(val, batch_size=batch_size)
+    test_loader = torch.utils.data.DataLoader(test, batch_size=batch_size)
+
+
+
+    # 学習の実行
+    net = Net()
     logger = CSVLogger(save_dir='logs', name='my_exp')
     trainer = pl.Trainer(max_epochs=1, deterministic=True, logger=logger)
     trainer.fit(net, train_loader, val_loader)
-    return trainer
+
+
+    # テストデータで評価
+    results = trainer.test(dataloaders=test_loader)
+
+    return func.HttpResponse(str(results))
+
+
+# -----------------------------------------------------------------------------------------------------------
+# 関数
+
 
 # テストデータでモデルを評価
 def evaluation(test_loader, trainer):
