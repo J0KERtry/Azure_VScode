@@ -72,7 +72,6 @@ def orchestrator(context: df.DurableOrchestrationContext) -> str:
         result = yield context.call_activity(process, inputs)
     
     # クライアント関数へ値渡す
-    context.set_custom_status(result)
     return result
 
 

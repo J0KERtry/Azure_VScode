@@ -1,7 +1,6 @@
 import azure.functions as func
 import azure.durable_functions as df
 import logging
-import time
 
 # コールドスタートの応答速度検証
 
@@ -28,12 +27,11 @@ async def client_function(req: func.HttpRequest, client: df.DurableOrchestration
 
 
 @app.orchestration_trigger(context_name="context")
-def orchestrator(context: df.DurableOrchestrationContext):
-    context.call_activity("activity1")
-    time.sleep(0.1)
-    return "end_orchestration"
+def orchestrator(context: df.DurableOrchestrationContext) -> str:
+    result = yield context.call_activity("activity1", "")
+    return result
 
 
-@app.activity_trigger(input_name="inputs")
-def pre_processing(inputs: dict):
-    return "end_active"
+@app.activity_trigger(input_name="blank")
+def activity1(blank: str):
+    return " end "
