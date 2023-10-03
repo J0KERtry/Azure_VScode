@@ -34,7 +34,10 @@ def orchestrator(context: df.DurableOrchestrationContext) -> str:
 
 @app.activity_trigger(input_name="blank")
 def activity1(blank: str):
-    return " end "
+    data_1kb = bytearray(1024)  # 1KBのデータを生成
+    x = 3
+    y = 4
+    return data_1kb
 
 data_1kb = bytearray(1024)  # 1KBのデータを生成
 data_1mb = bytearray(1024 * 1024)  # 1MBのデータを生成
