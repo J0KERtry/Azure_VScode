@@ -2,6 +2,8 @@
 
 import azure.functions as func
 import azure.durable_functions as df
+import string
+import random
 import logging
 
 app = df.DFApp(http_auth_level=func.AuthLevel.ANONYMOUS)
@@ -34,11 +36,4 @@ def orchestrator(context: df.DurableOrchestrationContext) -> str:
 
 @app.activity_trigger(input_name="blank")
 def activity1(blank: str):
-    data_1kb = bytearray(1024)  # 1KBのデータを生成
-    x = 3
-    y = 4
-    return data_1kb
-
-data_1kb = bytearray(1024)  # 1KBのデータを生成
-data_1mb = bytearray(1024 * 1024)  # 1MBのデータを生成
-data_1gb = bytearray(1024 * 1024 * 1024)  # 1GBのデータを生成
+    return "".join(random.choice(string.ascii_lowercase) for _ in range(1024))

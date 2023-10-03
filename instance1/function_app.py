@@ -1,5 +1,4 @@
-### データの転送 ###
-# size1にコピー済み
+### インスタンスの数 ###
 
 import azure.functions as func
 import azure.durable_functions as df
@@ -35,8 +34,4 @@ def orchestrator(context: df.DurableOrchestrationContext) -> str:
 
 @app.activity_trigger(input_name="blank")
 def activity1(blank: str):
-    return " end "
-
-data_1kb = bytearray(1024)  # 1KBのデータを生成
-data_1mb = bytearray(1024 * 1024)  # 1MBのデータを生成
-data_1gb = bytearray(1024 * 1024 * 1024)  # 1GBのデータを生成
+    return
