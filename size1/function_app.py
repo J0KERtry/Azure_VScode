@@ -2,9 +2,12 @@
 
 import azure.functions as func
 import azure.durable_functions as df
-import string
 import random
+import numpy as np
+import pandas as pd
+import time
 import logging
+
 
 app = df.DFApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 @app.route(route="orchestrators/client_function")
@@ -23,17 +26,21 @@ async def client_function(req: func.HttpRequest, client: df.DurableOrchestration
 
     # オーケストレーションの実行結果を取得
     runtime = status.runtime_status
-    input_ = status.input_
     output = status.output
-    return f"runtime: {runtime}\n\ninput_:{input_}\n\noutput:{output}" 
+    return f"runtime: {runtime}\n\noutput:{output}" 
 
 
 @app.orchestration_trigger(context_name="context")
 def orchestrator(context: df.DurableOrchestrationContext) -> str:
-    result = yield context.call_activity("activity1", "")
-    return result
+    start = time.time()
+    context.call_activity("activity1", "")
+    exec_time = time.time() - start
+    return exec_time
 
 
 @app.activity_trigger(input_name="blank")
 def activity1(blank: str):
-    return "".join(random.choice(string.ascii_lowercase) for _ in range(1024))
+    data = np.random.rand(1024*1024) # ランダムなデータを生成
+    df = pd.DataFrame(data) # DataFrameを作成
+    df_json = df.to_json()
+    return df_json
