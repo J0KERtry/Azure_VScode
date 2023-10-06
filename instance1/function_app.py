@@ -3,6 +3,7 @@
 import azure.functions as func
 import azure.durable_functions as df
 import logging
+import time
 
 app = df.DFApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 @app.route(route="orchestrators/client_function")
@@ -28,10 +29,19 @@ async def client_function(req: func.HttpRequest, client: df.DurableOrchestration
 
 @app.orchestration_trigger(context_name="context")
 def orchestrator(context: df.DurableOrchestrationContext) -> str:
-    result = yield context.call_activity("activity1", "")
-    return result
+    start = time.time()
+    yield context.call_activity("activity1", "")
+    yield context.call_activity("activity2", "")
+    return_time = time.time() - start
+    return return_time
 
 
 @app.activity_trigger(input_name="blank")
 def activity1(blank: str):
-    return
+    time.sleep(1000*60)
+    return " "
+
+@app.activity_trigger(input_name="blank")
+def activity1(blank: str):
+    time.sleep(1000*60)
+    return " "
