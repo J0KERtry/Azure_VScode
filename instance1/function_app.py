@@ -22,9 +22,8 @@ async def client_function(req: func.HttpRequest, client: df.DurableOrchestration
 
     # オーケストレーションの実行結果を取得
     runtime = status.runtime_status
-    input_ = status.input_
     output = status.output
-    return f"runtime: {runtime}\n\ninput_:{input_}\n\noutput:{output}" 
+    return f"runtime: {runtime}\n\noutput:{output}" 
 
 
 @app.orchestration_trigger(context_name="context")
