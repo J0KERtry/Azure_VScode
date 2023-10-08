@@ -32,13 +32,14 @@ async def client_function(req: func.HttpRequest, client: df.DurableOrchestration
 @app.orchestration_trigger(context_name="context")
 def  orchestrator(context: df.DurableOrchestrationContext):
     start  =  time.time()
-    result  =  yield  context.call_activity("activity1", "")
+    result  =  yield context.call_activity("activity1", "")
     transfer_time  =  time.time() -  start
-    return  transfer_time
+    return  result
 
 @app.activity_trigger(input_name="blank")
 def  activity1(blank: str) -> str:
-    data  =  np.random.rand(600*600) # ランダムなデータ生成
+    data  =  np.random.rand(1024*1024*5) # ランダムなデータ生成
     df  =  pd.DataFrame(data) # データフレーム作成
     df_  =  df.to_dict()
-    return  df_
+    
+    return df_.__sizeof__()
