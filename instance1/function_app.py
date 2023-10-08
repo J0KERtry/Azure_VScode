@@ -37,10 +37,10 @@ def orchestrator(context: df.DurableOrchestrationContext) -> str:
 
 @app.activity_trigger(input_name="blank")
 def activity1(blank: str):
-    time.sleep(1)
+    time.sleep(10)
     return " "
 
 @app.activity_trigger(input_name="blank")
 def activity2(blank: str):
-    time.sleep(1)
+    time.sleep(10)
     return " "
