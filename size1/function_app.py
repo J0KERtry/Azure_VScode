@@ -6,6 +6,7 @@ import logging
 import numpy as np
 import pandas as pd
 import time
+import pickle
 
 
 app = df.DFApp(http_auth_level=func.AuthLevel.ANONYMOUS)
@@ -36,10 +37,10 @@ def  orchestrator(context: df.DurableOrchestrationContext):
     transfer_time  =  time.time() -  start
     return  result
 
+
 @app.activity_trigger(input_name="blank")
-def  activity1(blank: str) -> str:
-    data  =  np.random.rand(1024*1024*5) # ランダムなデータ生成
-    df  =  pd.DataFrame(data) # データフレーム作成
-    df_  =  df.to_dict()
-    
-    return df_.__sizeof__()
+def  activity1(blank: str) -> int:
+    data = np.random.rand(1024 * 1024 * 5)  # Create random data
+    serialized_data = pickle.dumps(data)  # Serialize encode the data
+    serialized_size = len(serialized_data)  # Measure the size in bytes
+    return serialized_size

@@ -27,20 +27,20 @@ async def client_function(req: func.HttpRequest, client: df.DurableOrchestration
 
 
 @app.orchestration_trigger(context_name="context")
-def orchestrator(context: df.DurableOrchestrationContext) -> str:
+def orchestrator(context: df.DurableOrchestrationContext) -> float:
     start = time.time()
-    yield context.call_activity("activity1", "")
-    yield context.call_activity("activity2", "")
+    a = context.call_activity("activity1", "")
+    b = context.call_activity("activity2", "")
     return_time = time.time() - start
     return return_time
 
 
 @app.activity_trigger(input_name="blank")
-def activity1(blank: str):
+def activity1(blank: str) :
     time.sleep(10)
-    return " "
+    return None
 
 @app.activity_trigger(input_name="blank")
 def activity2(blank: str):
     time.sleep(10)
-    return " "
+    return None
