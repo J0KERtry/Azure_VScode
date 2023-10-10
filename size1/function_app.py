@@ -41,6 +41,7 @@ def  orchestrator(context: df.DurableOrchestrationContext):
 @app.activity_trigger(input_name="blank")
 def  activity1(blank: str) -> int:
     data = np.random.rand(1024 * 1024 * 5)  # Create random data
-    serialized_data = pickle.dumps(data)  # Serialize encode the data
+    df  =  pd.DataFrame(data) # Data frame creation
+    serialized_data = pickle.dumps(df)  # Serialize encode the data
     serialized_size = len(serialized_data)  # Measure the size in bytes
     return serialized_size
