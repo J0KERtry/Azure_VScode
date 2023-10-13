@@ -6,7 +6,6 @@ import logging
 import numpy as np
 import pandas as pd
 import pickle
-import random
 import time
 
 app = df.DFApp(http_auth_level=func.AuthLevel.ANONYMOUS)
@@ -46,14 +45,16 @@ def orchestrator(context: df.DurableOrchestrationContext) -> float:
 
 @app.activity_trigger(input_name="blank")
 def activity1(blank: str) -> str :
-    data = np.random.rand(500*500)
-    df = pd.DataFrame(data)
-    df_ = df.to_dict()
-    return df_
+    data = np.random.rand(1024 * 1024)  # 1文字8バイトのfloat64。n個のデータを生成した場合、サイズは8nバイト
+    df  =  pd.DataFrame(data) # Data frame creation
+    serialized_data = pickle.dumps(df)  # Serialize encode the data
+    serialized_size = len(serialized_data)  # Measure the size in bytes
+    return serialized_data
 
 @app.activity_trigger(input_name="blank")
 def activity2(blank: str) -> str:
-    data = np.random.rand(500*500)
-    df = pd.DataFrame(data)
-    df_ = df.to_dict()
-    return df_
+    data = np.random.rand(1024 * 1024)  # 1文字8バイトのfloat64。n個のデータを生成した場合、サイズは8nバイト
+    df  =  pd.DataFrame(data) # Data frame creation
+    serialized_data = pickle.dumps(df)  # Serialize encode the data
+    serialized_size = len(serialized_data)  # Measure the size in bytes
+    return serialized_data
