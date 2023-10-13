@@ -40,7 +40,7 @@ def  orchestrator(context: df.DurableOrchestrationContext):
 
 @app.activity_trigger(input_name="blank")
 def  activity1(blank: str) -> int:
-    data = np.random.rand(1024 * 1024 * 5)  # Create random data
+    data = np.random.rand(1024 * 1024 * 100)  # 1文字8バイトのfloat64。n個のデータを生成した場合、サイズは8nバイト
     df  =  pd.DataFrame(data) # Data frame creation
     serialized_data = pickle.dumps(df)  # Serialize encode the data
     serialized_size = len(serialized_data)  # Measure the size in bytes

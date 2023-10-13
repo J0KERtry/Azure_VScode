@@ -3,6 +3,10 @@
 import azure.functions as func
 import azure.durable_functions as df
 import logging
+import numpy as np
+import pandas as pd
+import pickle
+import random
 import time
 
 app = df.DFApp(http_auth_level=func.AuthLevel.ANONYMOUS)
@@ -29,18 +33,27 @@ async def client_function(req: func.HttpRequest, client: df.DurableOrchestration
 @app.orchestration_trigger(context_name="context")
 def orchestrator(context: df.DurableOrchestrationContext) -> float:
     start = time.time()
-    a = context.call_activity("activity1", "")
-    b = context.call_activity("activity2", "")
-    return_time = time.time() - start
-    return return_time
+    a = yield context.call_activity("activity1", "")
+    time1 = float(time.time() - start)
+    b = yield context.call_activity("activity2", "")
+    time2 = float(time.time() - (start+time1))
+    total_time = float(time.time() - start)
+    
+    return {"total time" : total_time,
+            "time taken for activity1" : time1,
+            "time taken for activity2" : time2}
 
 
 @app.activity_trigger(input_name="blank")
-def activity1(blank: str) :
-    time.sleep(10)
-    return None
+def activity1(blank: str) -> str :
+    data = np.random.rand(500*500)
+    df = pd.DataFrame(data)
+    df_ = df.to_dict()
+    return df_
 
 @app.activity_trigger(input_name="blank")
-def activity2(blank: str):
-    time.sleep(10)
-    return None
+def activity2(blank: str) -> str:
+    data = np.random.rand(500*500)
+    df = pd.DataFrame(data)
+    df_ = df.to_dict()
+    return df_
