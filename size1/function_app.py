@@ -11,38 +11,21 @@ app = df.DFApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 @app.route(route="orchestrators/client_function")
 @app.durable_client_input(client_name="client")
 async def client_function(req: func.HttpRequest, client: df.DurableOrchestrationClient) -> func.HttpResponse:
-    
-    # パラメータ取得
-    size = req.params.get('size')
-    if not size:
-        try:
-            req_body = req.get_json()
-        except ValueError:
-            pass
-        else:
-            size = req_body.get('size')
-    size = int(size)
-
-    # オーケストレーションの起動
-    instance_id = await client.start_new("orchestrator", None, {})
-    logging.info(f"Started orchestration with ID = '{instance_id}'.")
-    
-    # オーケストレーションの完了を待機
-    await client.wait_for_completion_or_create_check_status_response(req, instance_id)
-
-    # オーケストレーションの実行状態を取得
-    status = await client.get_status(instance_id)
-
-    # オーケストレーションの実行結果を取得
-    runtime = status.runtime_status
-    output = status.output
-    return f"runtime: {runtime}\n\noutput:{output}" 
+    try:
+        size = int(req.params.get('size') or req.get_json().get('size'))
+        instance_id = await client.start_new("orchestrator", None, {"size": size})
+        logging.info(f"Started orchestration with ID = '{instance_id}'.")
+        await client.wait_for_completion_or_create_check_status_response(req, instance_id)
+        status = await client.get_status(instance_id)
+        return f"runtime: {status.runtime_status}\n\noutput: {status.output}"
+    except Exception as e:
+        return func.HttpResponse(str(e), status_code=500)
 
 
 @app.orchestration_trigger(context_name="context")
 def  orchestrator(context: df.DurableOrchestrationContext):
     parameter = context.get_input()
-    size = parameter.get("size")
+    size = int(parameter.get("size"))
 
     data = np.random.rand(size)
     df = pd.DataFrame(data)

@@ -19,13 +19,9 @@ async def client_function(req: func.HttpRequest, client: df.DurableOrchestration
     # オーケストレーションの完了を待機
     await client.wait_for_completion_or_create_check_status_response(req, instance_id)
 
-    # オーケストレーションの実行状態を取得
+    # オーケストレーションの実行状態を取得 & 表示
     status = await client.get_status(instance_id)
-
-    # オーケストレーションの実行結果を取得
-    runtime = status.runtime_status
-    output = status.output
-    return f"runtime: {runtime}\n\noutput:{output}" 
+    return f"runtime: {status.runtime_status}\n\noutput: {status.output}" 
 
 
 @app.orchestration_trigger(context_name="context")
@@ -39,7 +35,7 @@ def  orchestrator(context: df.DurableOrchestrationContext):
 @app.activity_trigger(input_name="blank")
 def  activity1(blank: str) -> str:
     # 1文字8バイトのfloat64。n個のデータを生成した場合、サイズは8nバイト. 8n/(1024*1024)MB
-    data = np.random.rand(75000)  
+    data = np.random.rand(100000)  
     df  =  pd.DataFrame(data) # DataFrame作成
     df_ = df.to_dict() # DataFrameをシリアライズ可能なdictに変換
     return df_
