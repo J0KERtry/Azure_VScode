@@ -1,4 +1,4 @@
-### HTTPパラメータデータフレームのサイズを書き込み、データサイズのみ確認 ###
+### sizeパラメータでDataFrameのサイズを設定し、データサイズのみ確認 ###
 import azure.functions as func
 import azure.durable_functions as df
 import logging
