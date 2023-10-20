@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import time
 import sys
+import csv
 
 app = df.DFApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 @app.route(route="orchestrators/client_function")
@@ -39,22 +40,38 @@ def orchestrator(context: df.DurableOrchestrationContext) -> dict:
         data_frame = pd.DataFrame.from_dict(result["data"])  # デシリアライズ
         transfer_time  =  time.perf_counter() - result["start"] # デシリアライズが終了したら転送時間記録
 
-        # 転送時間の計測が終わったら、データサイズを計測
-        dict_size = sys.getsizeof(result["data"])
+        dict_size = sys.getsizeof(result["data"]) # 転送時間の計測が終わったら、データサイズを計測
         dict_size += sum(map(sys.getsizeof, result["data"].values())) + sum(map(sys.getsizeof, result["data"].keys()))
-        return  {"Transfer_time(DataFrame)": transfer_time, "data_size": dict_size}
+        output = {"DataFrame": size, "datasize": dict_size, "Transfer_time": transfer_time}
+
+        with open('test.csv', 'a', newline='') as f:
+            header = ['DataFrame', 'datasize', 'Transfer_time']
+            writer = csv.DictWriter(f, header)
+            writer.writerow({'DataFrame': size, 'datasize': dict_size, 'Transfer_time': transfer_time})
     
     elif activity == 2: # Numpy配列
         result  =  yield context.call_activity("activity2", size)
         receive = np.array(result["data"])
         transfer_time  =  time.perf_counter() - result["start"] # 転送データを受け取ったら転送時間記録
-        return  {"Transfer_time(int)": transfer_time, "data_size": result["data_size"]}
+        output = {"DataFrame": size, "datasize": result["data_size"], "Transfer_time": transfer_time}
+
+        with open('test.csv', 'a', newline='') as f:
+            header = ['DataFrame', 'datasize', 'Transfer_time']
+            writer = csv.DictWriter(f, header)
+            writer.writerow({'DataFrame': size, 'datasize': result['data_size'], 'Transfer_time': transfer_time})
     
     elif activity == 3: # list
         result  =  yield context.call_activity("activity3", size)
         receive = result["data"]
         transfer_time  =  time.perf_counter() - result["start"]
-        return  {"Transfer_time(list)": transfer_time, "data_size": result["data_size"]}
+        output = {"DataFrame": size, "datasize": result["data_size"], "Transfer_time": transfer_time}
+
+        with open('test.csv', 'a', newline='') as f:
+            header = ['DataFrame', 'datasize', 'Transfer_time']
+            writer = csv.DictWriter(f, header)
+            writer.writerow({'DataFrame': size, 'datasize': result['data_size'], 'Transfer_time': transfer_time})
+
+    return output
 
 
 # DataFrameを作成し転送
