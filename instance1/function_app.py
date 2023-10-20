@@ -7,6 +7,7 @@ import pandas as pd
 import time
 
 app = df.DFApp(http_auth_level=func.AuthLevel.ANONYMOUS)
+
 @app.route(route="orchestrators/client_function")
 @app.durable_client_input(client_name="client")
 async def client_function(req: func.HttpRequest, client: df.DurableOrchestrationClient) -> func.HttpResponse:

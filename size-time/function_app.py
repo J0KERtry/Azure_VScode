@@ -1,11 +1,11 @@
-### データサイズと転送方向をsizeとactivityのパラメータで渡し、応答速度が返される ###
+### データサイズと型をsizeとactivityのパラメータで渡し、応答速度が返される ###
 import azure.functions as func
 import azure.durable_functions as df
 import logging
 import numpy as np
 import pandas as pd
 import time
-
+import sys
 
 app = df.DFApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 @app.route(route="orchestrators/client_function")
@@ -34,30 +34,53 @@ def orchestrator(context: df.DurableOrchestrationContext) -> dict:
     activity = int(parameter.get("activity"))
     size = int(parameter.get("size"))
     
-    if activity == 1:
+    if activity == 1: #DataFrame
         result  =  yield context.call_activity("activity1", size)
-        transfer_time  =  time.perf_counter() - result["start"]
-        return  {"Transfer_time from act1 to orc": transfer_time}
+        data_frame = pd.DataFrame.from_dict(result["data"])  # デシリアライズ
+        transfer_time  =  time.perf_counter() - result["start"] # デシリアライズが終了したら転送時間記録
+
+        # 転送時間の計測が終わったら、データサイズを計測
+        dict_size = sys.getsizeof(result["data"])
+        dict_size += sum(map(sys.getsizeof, result["data"].values())) + sum(map(sys.getsizeof, result["data"].keys()))
+        return  {"Transfer_time(DataFrame)": transfer_time, "data_size": dict_size}
     
-    elif activity == 2:
-        data = np.random.rand(size) # データ作成
-        df  =  pd.DataFrame(data)
-        payload = {"df_": df.to_dict(), "start": time.perf_counter()}
-        transfer_time  =  yield context.call_activity("activity2", payload)
+    elif activity == 2: # Numpy配列
+        result  =  yield context.call_activity("activity2", size)
+        receive = np.array(result["data"])
+        transfer_time  =  time.perf_counter() - result["start"] # 転送データを受け取ったら転送時間記録
+        return  {"Transfer_time(int)": transfer_time, "data_size": result["data_size"]}
+    
+    elif activity == 3: # list
+        result  =  yield context.call_activity("activity3", size)
+        receive = result["data"]
+        transfer_time  =  time.perf_counter() - result["start"]
+        return  {"Transfer_time(list)": transfer_time, "data_size": result["data_size"]}
 
-        return  {"Transfer_time from orc to act2": transfer_time}
 
-
-# sizeからDataFrame作成し、アクティビティ関数 -> オーケストレーター関数に転送
+# DataFrameを作成し転送
 @app.activity_trigger(input_name="size")
 def  activity1(size: int) -> dict:
-    data = np.random.rand(size)  
-    df  =  pd.DataFrame(data)
-    return {"df_": df.to_dict(), "start": time.perf_counter()}
+    data = np.random.rand(size) # 1行size列のNumpy配列作成
+    data  =  pd.DataFrame(data) # Numpy配列をDataframeに変換
+    start = time.perf_counter() # Dataframeをシリアライズ可能な辞書型に変換する時間も測るため、ここに表記
+    data_ = data.to_dict() # シリアライズ可能な型に変換
+    return {"data": data_, "start": start}
 
+# Numpy配列を作成し転送
+# 10MBのデータ生成-> size = 10*1024*1024
+@app.activity_trigger(input_name="size")
+def  activity2(size: int) -> dict:
+    data = np.random.randint(0, 10, size=size // 4, dtype=np.int32)
+    data_size = sys.getsizeof(data)
+    start = time.perf_counter()
+    data = data.tolist()
+    return {"data": data, "data_size": data_size, "start": start}
 
-# オーケストレーション関数 からstartとDataFrame受け取る
-@app.activity_trigger(input_name="payload")
-def  activity2(payload: dict) -> float:
-    start = payload["start"]
-    return time.perf_counter() - start
+# リスト型を作成し転送
+# 10MB のリストを作る-> size = 10*1024*1024
+@app.activity_trigger(input_name="size")
+def  activity3(size: int) -> dict:
+    data = [0] * (size // sys.getsizeof(0))
+    data_size = sys.getsizeof(data)
+    start = time.perf_counter()
+    return {"data": data, "data_size": data_size, "start": start}
