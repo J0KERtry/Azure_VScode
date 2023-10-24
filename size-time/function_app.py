@@ -6,7 +6,6 @@ import numpy as np
 import pandas as pd
 import time
 import sys
-import csv
 
 app = df.DFApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 @app.route(route="orchestrators/client_function")
@@ -34,47 +33,42 @@ def orchestrator(context: df.DurableOrchestrationContext) -> dict:
     parameter = context.get_input()
     activity = int(parameter.get("activity"))
     size = int(parameter.get("size"))
+    data_size_list, byte_list, time_list = [], [], []
     
     if activity == 1: #DataFrame
-        result  =  yield context.call_activity("activity1", size)
-        data_frame = pd.DataFrame.from_dict(result["data"])  # デシリアライズ
-        transfer_time  =  time.perf_counter() - result["start"] # デシリアライズが終了したら転送時間記録
-
-        dict_size = sys.getsizeof(result["data"]) # 転送時間の計測が終わったら、データサイズを計測
-        dict_size += sum(map(sys.getsizeof, result["data"].values())) + sum(map(sys.getsizeof, result["data"].keys()))
-        output = {"DataFrame": size, "datasize": dict_size, "Transfer_time": transfer_time}
-
-        with open('test.csv', 'a', newline='') as f:
-            header = ['DataFrame', 'datasize', 'Transfer_time']
-            writer = csv.DictWriter(f, header)
-            writer.writerow({'DataFrame': size, 'datasize': dict_size, 'Transfer_time': transfer_time})
+        for i in range(2):        
+            result  =  yield context.call_activity("activity1", size)
+            data_frame = pd.DataFrame.from_dict(result["data"])  # デシリアライズ
+            transfer_time  =  time.perf_counter() - result["start"] # デシリアライズが終了したら転送時間記録
+            dict_size = sys.getsizeof(result["data"]) # 転送時間の計測が終わったら、データサイズを計測
+            dict_size += sum(map(sys.getsizeof, result["data"].values())) + sum(map(sys.getsizeof, result["data"].keys()))
+            data_size_list.append(size)
+            byte_list.append(dict_size)
+            time_list.append(transfer_time)
     
     elif activity == 2: # Numpy配列
-        result  =  yield context.call_activity("activity2", size)
-        receive = np.array(result["data"])
-        transfer_time  =  time.perf_counter() - result["start"] # 転送データを受け取ったら転送時間記録
-        output = {"DataFrame": size, "datasize": result["data_size"], "Transfer_time": transfer_time}
-
-        with open('test.csv', 'a', newline='') as f:
-            header = ['DataFrame', 'datasize', 'Transfer_time']
-            writer = csv.DictWriter(f, header)
-            writer.writerow({'DataFrame': size, 'datasize': result['data_size'], 'Transfer_time': transfer_time})
+        for i in range(2):  
+            result  =  yield context.call_activity("activity2", size)
+            receive = np.array(result["data"])
+            transfer_time  =  time.perf_counter() - result["start"] # 転送データを受け取ったら転送時間記録
+            data_size_list.append(size)
+            byte_list.append(result['data_size'])
+            time_list.append(transfer_time)
     
     elif activity == 3: # list
         result  =  yield context.call_activity("activity3", size)
         receive = result["data"]
         transfer_time  =  time.perf_counter() - result["start"]
-        output = {"DataFrame": size, "datasize": result["data_size"], "Transfer_time": transfer_time}
+        data_size_list.append(size)
+        byte_list.append(result['data_size'])
+        time_list.append(transfer_time)
 
-        with open('test.csv', 'a', newline='') as f:
-            header = ['DataFrame', 'datasize', 'Transfer_time']
-            writer = csv.DictWriter(f, header)
-            writer.writerow({'DataFrame': size, 'datasize': result['data_size'], 'Transfer_time': transfer_time})
-
+    output = {"data-size": data_size_list, "data-byte": byte_list, "transfer-time": time_list}
+    result = yield context.call_activity("write_csv", output)
     return output
 
 
-# DataFrameを作成し転送
+# DataFrameを辞書型にして転送
 @app.activity_trigger(input_name="size")
 def  activity1(size: int) -> dict:
     data = np.random.rand(size) # 1行size列のNumpy配列作成
@@ -84,20 +78,27 @@ def  activity1(size: int) -> dict:
     return {"data": data_, "start": start}
 
 # Numpy配列を作成し転送
-# 10MBのデータ生成-> size = 10*1024*1024
 @app.activity_trigger(input_name="size")
 def  activity2(size: int) -> dict:
-    data = np.random.randint(0, 10, size=size // 4, dtype=np.int32)
+    data = np.random.randint(0, 100, size=size*250000, dtype=np.int32)
     data_size = sys.getsizeof(data)
     start = time.perf_counter()
     data = data.tolist()
     return {"data": data, "data_size": data_size, "start": start}
 
 # リスト型を作成し転送
-# 10MB のリストを作る-> size = 10*1024*1024
 @app.activity_trigger(input_name="size")
 def  activity3(size: int) -> dict:
     data = [0] * (size // sys.getsizeof(0))
     data_size = sys.getsizeof(data)
     start = time.perf_counter()
     return {"data": data, "data_size": data_size, "start": start}
+
+# csvに書き込む関数
+@app.blob_output(arg_name="outputblob", path="newblob/result.csv", connection="BlobStorageConnection")
+@app.activity_trigger(input_name="output")
+def  write_csv(output: dict, outputblob: func.Out[str]):
+    df = pd.DataFrame(output)
+    csv_data = df.to_csv(index=False)
+    outputblob.set(csv_data)
+    return "Insersed"

@@ -20,11 +20,8 @@ async def client_function(req: func.HttpRequest, client: df.DurableOrchestration
 
     instance_id = await client.start_new("orchestrator", None)
     logging.info(f"Started orchestration with ID = '{instance_id}'.")
-    
-    # オーケストレーションの完了を待機
     await client.wait_for_completion_or_create_check_status_response(req, instance_id)
 
-    # オーケストレーションの実行状態を取得
     status = await client.get_status(instance_id)
     # output_str = "\n\n".join([f"{key}: {value}" for key, value in status.output.items()])
     return f"runtime: {status.runtime_status}\n\noutput:\n {status.output}" 
@@ -32,12 +29,15 @@ async def client_function(req: func.HttpRequest, client: df.DurableOrchestration
 
 @app.orchestration_trigger(context_name="context")
 def orchestrator(context: df.DurableOrchestrationContext) -> dict:
+    '''
     parameter = context.get_input()
     activity = int(parameter.get("activity"))
     size = int(parameter.get("size"))
+    '''
 
     test = yield context.call_activity('main', '')
     
+    '''
     total_time = 0.0
     times = {}  # 各アクティビティの実行時間を記録
     start = time.perf_counter()
@@ -46,43 +46,35 @@ def orchestrator(context: df.DurableOrchestrationContext) -> dict:
         time_taken = float(time.perf_counter() - (start + total_time))
         times[f"time taken for activity{i}"] = time_taken
         total_time += time_taken
-    
     times["total time"] = total_time
-    
-    return {"Test", test}
+    '''
 
+    return "Test"
 
+# Azure Cosmos Database
+# Azure Blob Strage
+# Azure Event Grid
 @app.blob_output(arg_name="outputblob",
                 path="newblob/test.txt",
                 connection="BlobStorageConnection")
+@app.cosmos_db_output(arg_name="outputDocument",
+                      database_name="MyDatabase",
+                      container_name="MyCollection",
+                      connection="MyAccount_COSMOSDB")
+@app.event_grid_output(arg_name="outputEvent",
+                       topic_endpoint_uri="MyEventGridTopicUriSetting",
+                       topic_key_setting="MyEventGridTopicKeySetting")
 @app.activity_trigger(input_name="blank")
-def main(blank: str, outputblob: func.Out[str]):
-    string = "Data is successfully Inserted"
-    logging.info(f'Python Queue trigger function processed {len(string)} bytes')
-    outputblob.set(string)
-    return "Completed"
+def  main(blank: str,
+          outputblob: func.Out[str],
+          outputEvent: func.Out[str],
+          outputDocument: func.Out[func.Document]):
+    return  "OK"
 
 
 @app.activity_trigger(input_name="size")
-def activity1(size: int, outputblob: func.Out[str]) -> int:
+def activity1(size: int) -> int:
     data = np.random.rand(size) 
     df  =  pd.DataFrame(data) 
     df_ = df.to_dict()
-    string = "Data is successfully Inserted"
-    logging.info(f'Python Queue trigger function processed {len(df_)} bytes')
-    outputblob.set(string)
-    return len(df_)
-
-@app.activity_trigger(input_name="size")
-def activity2(size: int) -> int:
-    data = np.random.rand(size) 
-    df  =  pd.DataFrame(data)
-    df_ = df.to_dict()
-    return len(df_)
-
-@app.activity_trigger(input_name="size")
-def activity3(size: int) -> int:
-    data = np.random.rand(size) 
-    df  =  pd.DataFrame(data)
-    df_ = df.to_dict()
-    return len(df_)
+    return "ok"

@@ -41,22 +41,33 @@ def orchestrator(context: df.DurableOrchestrationContext) -> dict:
         df_ = df.to_dict()
         dict_size = sys.getsizeof(df_)
         dict_size += sum(map(sys.getsizeof, df_.values())) + sum(map(sys.getsizeof, df_.keys()))
-        return  {"transfer_size(Dataframe->dict)" : dict_size}
+
+        result = yield context.call_activity("write_csv", dict_size)
+        return  "transfer_size(Dataframe->dict) Inserted"
     
     # int型の転送サイズ
     # 10MBのint生成-> size = 10 * 1024 * 1024  ※10MBを32ビット整数で表現するための要素数を設定
     elif activity == 2:
-        data = np.random.randint(0, 10, size=size // 4, dtype=np.int32)
+        data = np.random.randint(0, 100, size=size*250000, dtype=np.int32)
         data_size = sys.getsizeof(data)
-        return {"transfer_size(int)": data_size}
+        # result = yield context.call_activity("write_csv", data_size)
+        return f"transfer_size(int) Inserted: {data_size}"
     
     # list型の転送サイズ
     # 10MB のリストを作る-> size = 10*1024*1024
     elif activity == 3:
         data = [0] * (size // sys.getsizeof(0))
         data_size = sys.getsizeof(data)
-        return {"transfer_size(list)": data_size}
+        result = yield context.call_activity("write_csv", data_size)
+        return "transfer_size(list) Inserted"
     
     # 画像
     elif activity == 4:
         return None
+    
+# csvに書き込む関数
+@app.blob_output(arg_name="outputblob", path="newblob/size.txt", connection="BlobStorageConnection")
+@app.activity_trigger(input_name="size")
+def  write_csv(size: int, outputblob: func.Out[str]):
+    outputblob.set(str(size))
+    return "end"
