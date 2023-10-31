@@ -14,7 +14,6 @@ async def client_function(req: func.HttpRequest, client: df.DurableOrchestration
     await client.wait_for_completion_or_create_check_status_response(req, instance_id)
     return client.create_check_status_response(req, instance_id)
 
-
 @app.orchestration_trigger(context_name="context")
 def orchestrator(context: df.DurableOrchestrationContext) -> dict:
     parameter = context.get_input()
@@ -22,6 +21,7 @@ def orchestrator(context: df.DurableOrchestrationContext) -> dict:
     for i in range(1, activity + 1):
         activity_func = context.call_activity(f"activity{i}", '')
     return 'end'
+
 
 # Azure Cosmos Database, Azure Blob Strage, Azure Event Grid
 @app.blob_output(arg_name="outputblob",
@@ -39,6 +39,7 @@ def  activity1(blank: str,
           outputblob: func.Out[str],
           outputEvent: func.Out[str],
           outputDocument: func.Out[func.Document]):
+    
     return  "OK"
 
 @app.blob_output(arg_name="outputblob",
