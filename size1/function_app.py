@@ -1,70 +1,110 @@
-### データ型とそのサイズを指定し、転送される際のデータサイズを返す ###
-import azure.functions as func
-import azure.durable_functions as df
-import logging
-import numpy as np
-import pandas as pd
-import sys
+## 自由に修正可能なファイル　現在はimageでログを取得するために修正中
+import  azure.functions  as  func
+import  azure.durable_functions  as  df
+from sklearn.datasets import fetch_california_housing  # データセット
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import pytorch_lightning as pl
+from pytorch_lightning.loggers import CSVLogger
+from torchvision import transforms, datasets
+from torchmetrics.functional import accuracy
 
+class Net(pl.LightningModule):
+    def __init__(self):
+        super().__init__()
+        self.conv = nn.Conv2d(in_channels=1, out_channels=3, kernel_size=3, padding=1)
+        self.bn = nn.BatchNorm2d(3)
+        self.fc = nn.Linear(588, 10)  # 入力サイズを修正
 
-app = df.DFApp(http_auth_level=func.AuthLevel.ANONYMOUS)
+    def forward(self, x):
+        h = self.conv(x)
+        h = F.relu(h)
+        h = self.bn(h)
+        h = F.max_pool2d(h, kernel_size=2, stride=2)
+        h = h.view(-1, 588)
+        h = self.fc(h)
+        return h
+    
+    def training_step(self, batch, batch_idx):
+        x, t = batch
+        y = self(x)
+        loss = F.cross_entropy(y, t)
+        train_acc = accuracy(y.argmax(dim=-1), t, task='multiclass', num_classes=10, top_k=1)
+        self.log('train_loss', loss, on_step=True, on_epoch=True, prog_bar=True)
+        self.log('train_acc', train_acc, on_step=False, on_epoch=True, prog_bar=True)
+        return loss
+    
+    def validation_step(self, batch, batch_idx):
+        x, t = batch
+        y = self(x)
+        loss = F.cross_entropy(y, t)
+        val_acc = accuracy(y.argmax(dim=-1), t, task='multiclass', num_classes=10, top_k=1)
+        self.log('val_loss', loss, on_step=False, on_epoch=True)
+        self.log('val_acc', val_acc, on_step=False, on_epoch=True, prog_bar=True)
+        return loss
+    
+    def test_step(self, batch, batch_idx):
+        x, t = batch
+        y = self(x)
+        loss = F.cross_entropy(y, t)
+        test_acc = accuracy(y.argmax(dim=-1), t, task='multiclass', num_classes=10, top_k=1)
+        self.log('test_loss', loss, on_step=False, on_epoch=True)
+        self.log('test_acc', test_acc, on_step=False, on_epoch=True, prog_bar=True)
+        return loss
+    
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam(self.parameters(), lr=0.01)  # 学習率を調整
+        return optimizer
+
+app  =  df.DFApp(http_auth_level=func.AuthLevel.ANONYMOUS)  
 @app.route(route="orchestrators/client_function")
 @app.durable_client_input(client_name="client")
-async def client_function(req: func.HttpRequest, client: df.DurableOrchestrationClient) -> func.HttpResponse:
-    try:
-        activity = int(req.params.get('activity') or req.get_json().get('activity'))
-        size = int(req.params.get('size') or req.get_json().get('size'))
-    except Exception as e:
-        return func.HttpResponse("Invalid 'activity' or 'size' parameters.", status_code=400)
+async  def  client_function(req: func.HttpRequest, client: df.DurableOrchestrationClient) -> func.HttpResponse:
+    instance_id  =  await  client.start_new("orchestrator", None, {})
+    await  client.wait_for_completion_or_create_check_status_response(req, instance_id)
+    return client.create_check_status_response(req, instance_id)
 
-    instance_id = await client.start_new("orchestrator", None, {"activity": activity, "size": size})
-    logging.info(f"Started orchestration with ID = '{instance_id}'.")
-    
-    # オーケストレーションの完了を待機
-    await client.wait_for_completion_or_create_check_status_response(req, instance_id)
-
-    # オーケストレーションの実行状態を取得 & 表示
-    status = await client.get_status(instance_id)
-    return f"runtime: {status.runtime_status}\n\noutput: {status.output}" 
-
-
+### orchestrator function ###
 @app.orchestration_trigger(context_name="context")
-def orchestrator(context: df.DurableOrchestrationContext) -> dict:
-    parameter = context.get_input()
-    activity = int(parameter.get("activity"))
-    size = int(parameter.get("size"))
-    
-    # Dataframeから辞書型にしたものの転送サイズ
-    if activity == 1:
-        data = np.random.rand(size)
-        df = pd.DataFrame(data)
-        df_ = df.to_dict()
-        dict_size = sys.getsizeof(df_)
-        dict_size += sum(map(sys.getsizeof, df_.values())) + sum(map(sys.getsizeof, df_.keys()))
+def orchestrator(context: df.DurableOrchestrationContext) -> str:
+    result = yield context.call_activity("image", '')
+    return "Inserted"
 
-        result = yield context.call_activity("write_csv", dict_size)
-        return  "transfer_size(Dataframe->dict) Inserted"
-    
-    # int型の転送サイズ
-    # 10MBのint生成-> size = 10 * 1024 * 1024  ※10MBを32ビット整数で表現するための要素数を設定
-    elif activity == 2:
-        data = np.random.randint(0, 100, size=size*250000, dtype=np.int32)
-        data_size = sys.getsizeof(data)
-        # result = yield context.call_activity("write_csv", data_size)
-        return f"transfer_size(int) Inserted: {data_size}"
-    
-    # list型の転送サイズ
-    # 10MB のリストを作る-> size = 10*1024*1024
-    elif activity == 3:
-        data = [0] * (size // sys.getsizeof(0))
-        data_size = sys.getsizeof(data)
-        result = yield context.call_activity("write_csv", data_size)
-        return "transfer_size(list) Inserted"
-    
-    # 画像
-    elif activity == 4:
-        return None
-    
+### activity function ###
+@app.blob_output(arg_name="outputblob", path="newblob/test.txt", connection="BlobStorageConnection")
+@app.activity_trigger(input_name="blank")
+def image(blank: str, outputblob: func.Out[str]):
+
+    # データセットの変換を定義
+    transform = transforms.Compose([transforms.ToTensor()])
+    train_val = datasets.MNIST('./', train=True, download=True, transform=transform)
+    test = datasets.MNIST('./', train=False, download=True, transform=transform)
+
+    # train と val に分割
+    n_train,n_val = 50000, 10000
+    torch.manual_seed(0)
+    train, val = torch.utils.data.random_split(train_val, [n_train, n_val])
+
+    # バッチサイズの定義
+    batch_size = 256
+
+    # Data Loader を定義
+    train_loader = torch.utils.data.DataLoader(train, batch_size=batch_size, shuffle=True, drop_last=True)
+    val_loader = torch.utils.data.DataLoader(val, batch_size=batch_size)
+    test_loader = torch.utils.data.DataLoader(test, batch_size=batch_size)
+
+    # 学習の実行
+    net = Net()
+    logger = CSVLogger(save_dir='logs', name='my_exp')
+    trainer = pl.Trainer(max_epochs=5, deterministic=True, logger=logger)
+    trainer.fit(net, train_loader, val_loader)
+
+    # テストデータで評価
+    results = trainer.test(dataloaders=test_loader)
+
+    return str(results)
+
 # csvに書き込む関数
 @app.blob_output(arg_name="outputblob", path="newblob/size.txt", connection="BlobStorageConnection")
 @app.activity_trigger(input_name="size")

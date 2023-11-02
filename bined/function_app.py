@@ -1,3 +1,4 @@
+# データ分析、機械学習のコードを両方記述
 import  azure.functions  as  func
 import  azure.durable_functions  as  df
 import  pandas as pd

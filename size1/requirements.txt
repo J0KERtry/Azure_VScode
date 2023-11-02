@@ -4,5 +4,10 @@
 
 azure-functions
 azure-functions-durable
-numpy
 pandas
+numpy
+scikit-learn
+-f https://download.pytorch.org/whl/torch_stable.html
+torch==2.0.1+cpu 
+torchvision==0.15.2+cpu  
+torchmetrics
