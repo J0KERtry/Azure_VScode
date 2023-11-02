@@ -6,9 +6,41 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import pytorch_lightning as pl
-from pytorch_lightning.loggers import CSVLogger
 from torchvision import transforms, datasets
 from torchmetrics.functional import accuracy
+from azure.storage.blob import BlobServiceClient
+from pytorch_lightning.loggers import Logger
+from pytorch_lightning.utilities import rank_zero_only
+
+class AzureBlobLogger(Logger):
+    def __init__(self, container_name, blob_name_prefix, connection_string):
+        super().__init__()
+        self.container_name = container_name
+        self.blob_name_prefix = blob_name_prefix
+        self.blob_service_client = BlobServiceClient.from_connection_string(connection_string)
+        self.container_client = self.blob_service_client.get_container_client(container_name)
+        if not self.container_client.exists():
+            self.container_client.create_container()
+
+    @property
+    def name(self):
+        return 'AzureBlobLogger'
+
+    @property
+    def version(self):
+        return '0.0.1'
+
+    @rank_zero_only
+    def log_metrics(self, metrics, step):
+        blob_name = f"{self.blob_name_prefix}_step_{step}.csv"
+        blob_client = self.blob_service_client.get_blob_client(container=self.container_name, blob=blob_name)
+        csv_content = ",".join([f"{k},{v}" for k, v in metrics.items()])
+        blob_client.upload_blob(csv_content, overwrite=True)
+
+    @rank_zero_only
+    def log_hyperparams(self, params):
+        # Implement if needed
+        pass
 
 class Net(pl.LightningModule):
     def __init__(self):
@@ -68,14 +100,13 @@ async  def  client_function(req: func.HttpRequest, client: df.DurableOrchestrati
 ### orchestrator function ###
 @app.orchestration_trigger(context_name="context")
 def orchestrator(context: df.DurableOrchestrationContext) -> str:
-    result = yield context.call_activity("image", '')
-    return "Inserted"
+    result = yield context.call_activity("image", "")
+    return result
 
 ### activity function ###
 @app.blob_output(arg_name="outputblob", path="newblob/test.txt", connection="BlobStorageConnection")
 @app.activity_trigger(input_name="blank")
 def image(blank: str, outputblob: func.Out[str]):
-
     # データセットの変換を定義
     transform = transforms.Compose([transforms.ToTensor()])
     train_val = datasets.MNIST('./', train=True, download=True, transform=transform)
@@ -86,23 +117,22 @@ def image(blank: str, outputblob: func.Out[str]):
     torch.manual_seed(0)
     train, val = torch.utils.data.random_split(train_val, [n_train, n_val])
 
-    # バッチサイズの定義
-    batch_size = 256
-
     # Data Loader を定義
+    batch_size = 256
     train_loader = torch.utils.data.DataLoader(train, batch_size=batch_size, shuffle=True, drop_last=True)
     val_loader = torch.utils.data.DataLoader(val, batch_size=batch_size)
     test_loader = torch.utils.data.DataLoader(test, batch_size=batch_size)
 
     # 学習の実行
     net = Net()
-    logger = CSVLogger(save_dir='logs', name='my_exp')
-    trainer = pl.Trainer(max_epochs=5, deterministic=True, logger=logger)
+    azure_logger = AzureBlobLogger(
+        container_name="newblob",
+        blob_name_prefix="log",
+        connection_string="DefaultEndpointsProtocol=https;AccountName=instancedata01;AccountKey=Yor/4Lz9GzT666xMltpyUJzUZDb3SOlExJ13l35MrcKA7Qz7UPdNkL4TECJwP3QVSdceLjJ054WG+AStvp0o/g==;EndpointSuffix=core.windows.net"
+    )
+    trainer = pl.Trainer(max_epochs=3, deterministic=True, logger=azure_logger)
     trainer.fit(net, train_loader, val_loader)
-
-    # テストデータで評価
     results = trainer.test(dataloaders=test_loader)
-
     return str(results)
 
 # csvに書き込む関数

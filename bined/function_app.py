@@ -79,7 +79,7 @@ async  def  client_function(req: func.HttpRequest, client: df.DurableOrchestrati
 @app.orchestration_trigger(context_name="context")
 def orchestrator(context: df.DurableOrchestrationContext) -> str:
     result = yield context.call_activity("data", '')
-    result = yield context.call_activity("image", '')
+    result = yield context.call_activity("compere", '')
     return "Inserted"
 
 
@@ -182,6 +182,14 @@ def data(blank: str, outputblob: func.Out[str], outputEvent: func.Out[str], outp
     df_mse = pd.DataFrame(data=data, index=['重回帰', 'Ridge回帰', 'Lasso回帰'])
 
     return str(df_mse)
+
+@app.blob_output(arg_name="outputblob", path="newblob/test.txt", connection="BlobStorageConnection")
+@app.cosmos_db_output(arg_name="outputDocument", database_name="MyDatabase", container_name="MyCollection", connection="MyAccount_COSMOSDB")
+@app.event_grid_output(arg_name="outputEvent", topic_endpoint_uri="MyEventGridTopicUriSetting", topic_key_setting="MyEventGridTopicKeySetting")
+@app.activity_trigger(input_name="blank")
+def compere(blank: str, outputblob: func.Out[str], outputEvent: func.Out[str], outputDocument: func.Out[func.Document]):
+    x = 1 + 1
+    return str(x)
 
 @app.blob_output(arg_name="outputblob", path="newblob/test.txt", connection="BlobStorageConnection")
 @app.cosmos_db_output(arg_name="outputDocument", database_name="MyDatabase", container_name="MyCollection", connection="MyAccount_COSMOSDB")
