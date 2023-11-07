@@ -4,6 +4,7 @@
 
 azure-functions
 azure-functions-durable
+azure-storage-blob
 -f https://download.pytorch.org/whl/torch_stable.html
 torch==2.0.1+cpu
 pytorch-lightning

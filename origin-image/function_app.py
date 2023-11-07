@@ -1,4 +1,4 @@
-## 自由に修正可能なファイル　現在はimageでログを取得するために修正中
+## 画像分析のコード。機能別に実装。
 import  azure.functions  as  func
 import  azure.durable_functions  as  df
 import torch
@@ -103,6 +103,7 @@ def orchestrator(context: df.DurableOrchestrationContext) -> str:
     return result
 
 ### activity function ###
+### まだ機能別に実装できておらず、モノリシックになっている ###
 @app.blob_output(arg_name="outputblob", path="newblob/test.txt", connection="BlobStorageConnection")
 @app.activity_trigger(input_name="blank")
 def origin_image(blank: str, outputblob: func.Out[str]):
