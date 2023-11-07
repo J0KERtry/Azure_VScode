@@ -1,4 +1,4 @@
-## 画像分析のコード。機能別に実装。
+## 画像分析のコード。インライン展開後、重みにより分割。
 import  azure.functions  as  func
 import  azure.durable_functions  as  df
 import torch
@@ -103,7 +103,7 @@ def orchestrator(context: df.DurableOrchestrationContext) -> str:
     return result
 
 ### activity function ###
-### まだ機能別に実装できておらず、モノリシックになっている ###
+### まだインライン展開などできておらず、モノリシックになっている。 ###
 @app.blob_output(arg_name="outputblob", path="newblob/test.txt", connection="BlobStorageConnection")
 @app.activity_trigger(input_name="blank")
 def origin_image(blank: str, outputblob: func.Out[str]):
