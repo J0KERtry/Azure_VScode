@@ -3,7 +3,7 @@
 # Manually managing azure-functions-worker may cause unexpected issues
 
 azure-functions
-requests
+azure-functions-durable
 -f https://download.pytorch.org/whl/torch_stable.html
 torch==2.0.1+cpu
 pytorch-lightning

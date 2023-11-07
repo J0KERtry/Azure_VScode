@@ -1,12 +1,7 @@
 #### データ分析 ####
-
 import azure.functions as func
 import azure.durable_functions as df
-import logging
-import numpy as np
 import pandas as pd
-import seaborn as sns
-import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression  # 単回帰分析
 from sklearn.datasets import fetch_california_housing  # データセット
 from sklearn.model_selection import train_test_split  # 分割のためのモジュール
@@ -14,39 +9,28 @@ from sklearn.linear_model import Lasso  # Lasso回帰
 from sklearn.linear_model import Ridge  # Ridge回帰
 from sklearn.metrics import mean_squared_error  # MSE(Mean Squared Error)
 from sklearn.preprocessing import StandardScaler  # 標準化ライブラリ
-from sklearn.decomposition import PCA  # 主成分分析
 
 app = df.DFApp(http_auth_level=func.AuthLevel.ANONYMOUS)
-
-
-#=========================================================================================================
-# クライアント関数 
+### クライアント関数 ###
 @app.route(route="orchestrators/client_function")
 @app.durable_client_input(client_name="client")
 async def client_function(req: func.HttpRequest, client: df.DurableOrchestrationClient) -> func.HttpResponse:
-
-    # オーケストレーションの起動
     instance_id = await client.start_new("orchestrator", None, {})
-    logging.info(f"Started orchestration with ID = '{instance_id}'.")
-    
-    # オーケストレーションの完了を待機
     await client.wait_for_completion_or_create_check_status_response(req, instance_id)
-
-    # オーケストレーションの実行状態を取得
-    status = await client.get_status(instance_id)
-
-    # オーケストレーションの実行結果を取得
-    runtime = status.runtime_status
-    input_ = status.input_
-    output = status.output
-    return f"runtime: {runtime}\n\ninput_:{input_}\n\noutput:{output}" 
+    return client.create_check_status_response(req, instance_id)
 
 
-#=========================================================================================================
-# オーケストレーター関数
+### オーケストレーター関数 ###
 @app.orchestration_trigger(context_name="context")
 def orchestrator(context: df.DurableOrchestrationContext) -> str:
+    result = yield context.call_activity("a_code", '')
+    return "finished"
 
+
+### アクティビティ関数 ###
+@app.blob_output(arg_name="outputblob", path="newblob/test.txt", connection="BlobStorageConnection")
+@app.activity_trigger(input_name="blank")
+def a_code(blank: str, outputblob: func.Out[str]):
     # データの準備
     california_housing = fetch_california_housing()
 
@@ -167,7 +151,3 @@ def orchestrator(context: df.DurableOrchestrationContext) -> str:
     df_mse = pd.DataFrame(data=data, index=['重回帰', 'Ridge回帰', 'Lasso回帰'])
 
     return str(df_mse)
-
-
-#=========================================================================================================
-# アクティビティ関数

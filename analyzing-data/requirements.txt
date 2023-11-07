@@ -4,8 +4,6 @@
 
 azure-functions
 azure-functions-durable
-numpy
 pandas
-seaborn
-matplotlib
+numpy
 scikit-learn

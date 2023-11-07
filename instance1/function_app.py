@@ -1,8 +1,7 @@
-# データ分析、機械学習のコードを両方記述
+# データ分析のコードを、1つのインスタンスでまとめて実行と、複数のインスタンスをまたぐ場合のコードを記述
 import  azure.functions  as  func
 import  azure.durable_functions  as  df
 import  pandas as pd
-import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression  # 単回帰分析
 from sklearn.datasets import fetch_california_housing  # データセット
 from sklearn.model_selection import train_test_split  # 分割のためのモジュール
@@ -18,7 +17,6 @@ app  =  df.DFApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 async  def  client_function(req: func.HttpRequest, client: df.DurableOrchestrationClient) -> func.HttpResponse:
     split = int(req.params.get('split') or req.get_json().get('split'))
     instance_id  =  await  client.start_new("orchestrator", None, {"split":split})
-    await  client.wait_for_completion_or_create_check_status_response(req, instance_id)
     await client.wait_for_completion_or_create_check_status_response(req, instance_id)
     return client.create_check_status_response(req, instance_id)
 
@@ -26,14 +24,17 @@ async  def  client_function(req: func.HttpRequest, client: df.DurableOrchestrati
 @app.orchestration_trigger(context_name="context")
 def orchestrator(context: df.DurableOrchestrationContext) -> str:
     parameter = context.get_input()
-    split = int(parameter.get("split"))
+    split = int(parameter.get("split")) # 分割数取得
 
+    # 一度起動して温める
     result = yield context.call_activity("a_code", '')
     result = yield context.call_activity("loop", 2)
     
+    # コードを複数のインスタンスを経由して実行
     for i in range(split):
         result = yield context.call_activity("a_code", '')
-    
+
+    # コードを1つのインスタンスで実行
     result = yield context.call_activity("loop", split)
     
     return "Inserted"
