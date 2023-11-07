@@ -53,7 +53,7 @@ def a_code(blank: str, outputblob: func.Out[str]):
     data['AllBedrms'] = data['AveBedrms']*data['Household']
 
 
-### 単回帰分析 ###
+    ### 単回帰分析 ###
     exp_var = 'MedInc'
     tar_var = 'HousingPrices'
 
@@ -74,7 +74,7 @@ def a_code(blank: str, outputblob: func.Out[str]):
     model = LinearRegression()
     model.fit(X, y)
 
-### 重回帰分析 ###
+    ### 重回帰分析 ###
     # 説明変数
     exp_vars = ['MedInc', 'HouseAge', 'AveRooms', 'AveBedrms', 'Population', 'AveOccup', 'Latitude', 'Longitude']
     # 目的変数
