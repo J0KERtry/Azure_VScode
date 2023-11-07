@@ -99,14 +99,14 @@ async  def  client_function(req: func.HttpRequest, client: df.DurableOrchestrati
 ### orchestrator function ###
 @app.orchestration_trigger(context_name="context")
 def orchestrator(context: df.DurableOrchestrationContext) -> str:
-    result = yield context.call_activity("image", "")
+    result = yield context.call_activity("eval_image", "")
     return result
 
 ### activity function ###
 ### まだインライン展開などできておらず、モノリシックになっている。 ###
 @app.blob_output(arg_name="outputblob", path="newblob/test.txt", connection="BlobStorageConnection")
 @app.activity_trigger(input_name="blank")
-def origin_image(blank: str, outputblob: func.Out[str]):
+def eval_image(blank: str, outputblob: func.Out[str]):
     # データセットの変換を定義
     transform = transforms.Compose([transforms.ToTensor()])
     train_val = datasets.MNIST('./', train=True, download=True, transform=transform)

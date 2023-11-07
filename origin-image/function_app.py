@@ -99,7 +99,7 @@ async  def  client_function(req: func.HttpRequest, client: df.DurableOrchestrati
 ### orchestrator function ###
 @app.orchestration_trigger(context_name="context")
 def orchestrator(context: df.DurableOrchestrationContext) -> str:
-    result = yield context.call_activity("image", "")
+    result = yield context.call_activity("origin_image", "")
     return result
 
 ### activity function ###
@@ -128,7 +128,7 @@ def origin_image(blank: str, outputblob: func.Out[str]):
     azure_logger = AzureBlobLogger(
         container_name="newblob",
         blob_name_prefix="log",
-        connection_string="DefaultEndpointsProtocol=https;AccountName=evalimage;AccountKey=dy/ZwaMtIC+yB9yyNGdGMBXP7mGMy8gUc0VMIdPKxY/4BWGk2BBBrlFE7wZGZDHqMxvtZQ+tVHpp+AStDXRowA==;EndpointSuffix=core.windows.net"
+        connection_string="DefaultEndpointsProtocol=https;AccountName=originimage;AccountKey=+bXGQW9RYFTiQVJHKrINmYLO5zZb7x3iospwt8mzsoLlehZSroq00vNSaPHmi5FhZNlkG8GppRnK+AStPaOaCQ==;EndpointSuffix=core.windows.net"
     )
     trainer = pl.Trainer(max_epochs=3, deterministic=True, logger=azure_logger)
     trainer.fit(net, train_loader, val_loader)
