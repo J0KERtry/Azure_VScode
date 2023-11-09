@@ -19,11 +19,10 @@ async def client_function(req: func.HttpRequest, client: df.DurableOrchestration
     await client.wait_for_completion_or_create_check_status_response(req, instance_id)
     return client.create_check_status_response(req, instance_id)
 
-
 ### オーケストレーター関数 ###
 @app.orchestration_trigger(context_name="context")
 def orchestrator(context: df.DurableOrchestrationContext) -> str:
-    result = yield context.call_activity("a_code", '')
+    result = yield context.call_activity("origin_analysis", '')
     return "finished"
 
 
@@ -31,7 +30,7 @@ def orchestrator(context: df.DurableOrchestrationContext) -> str:
 # まだ機能別に実装できておらず、モノリシックになっている。
 @app.blob_output(arg_name="outputblob", path="newblob/test.txt", connection="BlobStorageConnection")
 @app.activity_trigger(input_name="blank")
-def a_code(blank: str, outputblob: func.Out[str]):
+def origin_analysis(blank: str, outputblob: func.Out[str]):
     # データの準備
     california_housing = fetch_california_housing()
 
