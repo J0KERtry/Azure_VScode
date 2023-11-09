@@ -10,6 +10,7 @@ from torchmetrics.functional import accuracy
 from azure.storage.blob import BlobServiceClient
 from pytorch_lightning.loggers import Logger
 from pytorch_lightning.utilities import rank_zero_only
+import os
 
 class AzureBlobLogger(Logger):
     def __init__(self, container_name, blob_name_prefix, connection_string):
@@ -107,10 +108,14 @@ def orchestrator(context: df.DurableOrchestrationContext) -> str:
 @app.blob_output(arg_name="outputblob", path="newblob/test.txt", connection="BlobStorageConnection")
 @app.activity_trigger(input_name="blank")
 def origin_image(blank: str, outputblob: func.Out[str]):
+    data_dir = './data'
+    if not os.path.exists(data_dir):
+        os.makedirs(data_dir)
+
     # データセットの変換を定義
     transform = transforms.Compose([transforms.ToTensor()])
-    train_val = datasets.MNIST('./', train=True, download=True, transform=transform)
-    test = datasets.MNIST('./', train=False, download=True, transform=transform)
+    train_val = datasets.MNIST(data_dir, train=True, download=True, transform=transform)
+    test = datasets.MNIST(data_dir, train=False, download=True, transform=transform)
 
     # train と val に分割
     n_train,n_val = 50000, 10000
