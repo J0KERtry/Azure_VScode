@@ -30,6 +30,7 @@ def orchestrator(context: df.DurableOrchestrationContext) -> str:
     ridge = yield context.call_activity("ridge_regression", multiple)
     lasso = yield context.call_activity("lasso_regression", multiple)
     result = yield context.call_activity("evaluate_models", multiple)
+    result = yield context.call_activity("origin_analysis", '')
     return "finished"
 
 
@@ -189,20 +190,18 @@ def evaluate_models(arg: dict):
 # 元のモノリシックコード
 @app.activity_trigger(input_name="blank")
 def origin_analysis(blank: str):
-    # データの準備
-    california_housing = fetch_california_housing()
 
-    # 説明変数
-    exp_data = pd.DataFrame(california_housing.data, columns=california_housing.feature_names)
-    # 目的変数
-    tar_data = pd.DataFrame(california_housing.target, columns=['HousingPrices'])
-    # データを結合
-    data = pd.concat([exp_data, tar_data], axis=1)
+    california_housing = fetch_california_housing() # データの準備
+
+    exp_data = pd.DataFrame(california_housing.data, columns=california_housing.feature_names) # 説明変数
+    
+    tar_data = pd.DataFrame(california_housing.target, columns=['HousingPrices']) # 目的変数
+    
+    data = pd.concat([exp_data, tar_data], axis=1) # データを結合
 
     # 異常値の削除
-    # 築52年以上のデータ、5.00001以上のデータとしてまとめられている可能性があるため削除
-    data = data[data['HouseAge'] != 52]
-    data = data[data['HousingPrices'] != 5.00001]
+    data = data[data['HouseAge'] != 52] # 築52年以上のデータ
+    data = data[data['HousingPrices'] != 5.00001] # 5.00001以上のデータとしてまとめられている可能性があるため削除
 
     # 世帯数、ブロックの全部屋数、ブロックの全寝室数を追加
     data['Household'] = data['Population']/data['AveOccup']
@@ -228,11 +227,10 @@ def origin_analysis(blank: str):
     model = LinearRegression()
     model.fit(X, y)
 
+
     ### 重回帰分析 ###
-    # 説明変数
-    exp_vars = ['MedInc', 'HouseAge', 'AveRooms', 'AveBedrms', 'Population', 'AveOccup', 'Latitude', 'Longitude']
-    # 目的変数
-    tar_var = 'HousingPrices'
+    exp_vars = ['MedInc', 'HouseAge', 'AveRooms', 'AveBedrms', 'Population', 'AveOccup', 'Latitude', 'Longitude'] # 説明変数
+    tar_var = 'HousingPrices' # 目的変数
 
     # 外れ値を除去
     for exp_var in exp_vars:
