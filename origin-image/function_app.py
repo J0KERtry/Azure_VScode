@@ -135,7 +135,7 @@ def origin_image(blank: str, outputblob: func.Out[str]):
         blob_name_prefix="log",
         connection_string="DefaultEndpointsProtocol=https;AccountName=originimage;AccountKey=+bXGQW9RYFTiQVJHKrINmYLO5zZb7x3iospwt8mzsoLlehZSroq00vNSaPHmi5FhZNlkG8GppRnK+AStPaOaCQ==;EndpointSuffix=core.windows.net"
     )
-    trainer = pl.Trainer(max_epochs=3, deterministic=True, logger=azure_logger)
+    trainer = pl.Trainer(max_epochs=5, deterministic=True, logger=azure_logger)
     trainer.fit(net, train_loader, val_loader)
     results = trainer.test(dataloaders=test_loader)
     return str(results)
