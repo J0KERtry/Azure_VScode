@@ -19,33 +19,27 @@ async def client_function(req: func.HttpRequest, client: df.DurableOrchestration
     await client.wait_for_completion_or_create_check_status_response(req, instance_id)
     return client.create_check_status_response(req, instance_id)
 
-
 ### オーケストレーター関数 ###
 @app.orchestration_trigger(context_name="context")
 def orchestrator(context: df.DurableOrchestrationContext) -> str:
-    result = yield context.call_activity("a_code", '')
+    result = yield context.call_activity("eval_analysis", '')
     return "finished"
 
 
 ### アクティビティ関数 ###
-# インライン展開など実装できておらず、モノリシックになっている。
+# 依存関係の強い処理をまとめて時間を計測する
 @app.blob_output(arg_name="outputblob", path="newblob/test.txt", connection="BlobStorageConnection")
 @app.activity_trigger(input_name="blank")
-def a_code(blank: str, outputblob: func.Out[str]):
-    # データの準備
+def eval_analysis(blank: str):
+# データの準備
     california_housing = fetch_california_housing()
-
-    # 説明変数
-    exp_data = pd.DataFrame(california_housing.data, columns=california_housing.feature_names)
-    # 目的変数
-    tar_data = pd.DataFrame(california_housing.target, columns=['HousingPrices'])
-    # データを結合
-    data = pd.concat([exp_data, tar_data], axis=1)
+    exp_data = pd.DataFrame(california_housing.data, columns=california_housing.feature_names) # 説明変数
+    tar_data = pd.DataFrame(california_housing.target, columns=['HousingPrices']) # 目的変数
+    data = pd.concat([exp_data, tar_data], axis=1) # データを結合
 
     # 異常値の削除
-    # 築52年以上のデータ、5.00001以上のデータとしてまとめられている可能性があるため削除
-    data = data[data['HouseAge'] != 52]
-    data = data[data['HousingPrices'] != 5.00001]
+    data = data[data['HouseAge'] != 52] # 築52年以上のデータ
+    data = data[data['HousingPrices'] != 5.00001] # 5.00001以上のデータとしてまとめられている可能性があるため削除
 
     # 世帯数、ブロックの全部屋数、ブロックの全寝室数を追加
     data['Household'] = data['Population']/data['AveOccup']
@@ -57,14 +51,8 @@ def a_code(blank: str, outputblob: func.Out[str]):
     exp_var = 'MedInc'
     tar_var = 'HousingPrices'
 
-    # 外れ値を除去
-    q_95 = data['MedInc'].quantile(0.95)
-
-    # 絞り込む
-    data = data[data['MedInc'] < q_95]
-
-    # 絞り込む
-    data = data[data['MedInc'] < q_95]
+    q_95 = data['MedInc'].quantile(0.95) # 外れ値を除去
+    data = data[data['MedInc'] < q_95] # 絞り込む
 
     # 説明変数と目的変数にデータを分割
     X = data[[exp_var]]
@@ -74,11 +62,10 @@ def a_code(blank: str, outputblob: func.Out[str]):
     model = LinearRegression()
     model.fit(X, y)
 
+
 ### 重回帰分析 ###
-    # 説明変数
-    exp_vars = ['MedInc', 'HouseAge', 'AveRooms', 'AveBedrms', 'Population', 'AveOccup', 'Latitude', 'Longitude']
-    # 目的変数
-    tar_var = 'HousingPrices'
+    exp_vars = ['MedInc', 'HouseAge', 'AveRooms', 'AveBedrms', 'Population', 'AveOccup', 'Latitude', 'Longitude'] # 説明変数
+    tar_var = 'HousingPrices' # 目的変数
 
     # 外れ値を除去
     for exp_var in exp_vars:
@@ -106,49 +93,36 @@ def a_code(blank: str, outputblob: func.Out[str]):
     y_pred = model.predict(X_train_scaled)
     y_pred[:10]
 
+    # 訓練データに対する Mean Squared Error (MSE)
+    mse_train = mean_squared_error(y_train, y_pred)
+
     # テストデータに対する MSE
     X_test_scaled = scaler.transform(X_test) # テストデータを訓練データから得られた平均と標準偏差で標準化
     y_test_pred = model.predict(X_test_scaled) # テストデータに対して予測する
     mse_test = mean_squared_error(y_test, y_test_pred)
 
-    # Ridge回帰
+
+### Ridge回帰 ###
     ridge = Ridge(alpha=1.0)
     ridge.fit(X_train_scaled, y_train)
     ridge_y_pred = ridge.predict(X_train_scaled)
 
-    # 偏回帰係数の確認
-    ridge_w = pd.DataFrame(ridge.coef_.T, index=exp_vars, columns=['Ridge'])
-    for xi, wi in zip(exp_vars, ridge.coef_[0]):
-        print('{0:7s}: {1:6.3f}'.format(xi, wi))
-    
-    # 訓練データに対する Mean Squared Error (MSE)
-    mse_train = mean_squared_error(y_train, y_pred)
-
     # 訓練データに対する Mean Squared Error (MSE)
     ridge_mse_train = mean_squared_error(y_train, ridge_y_pred)
-
-    # テストデータに対する MSE
+    # テストデータに対する Mean Squared Error (MSE)
     ridge_y_test_pred = ridge.predict(X_test_scaled) # テストデータに対して予測する
     ridge_mse_test = mean_squared_error(y_test, ridge_y_test_pred)
 
-    # Lasso回帰
+
+### Lasso回帰 ###
     lasso = Lasso(alpha=1.0)
     lasso.fit(X_train_scaled, y_train)
     lasso_y_pred = lasso.predict(X_train_scaled)
 
-    # 偏回帰係数の確認
-    lasso_w = pd.Series(index=exp_vars, data=lasso.coef_)
-
+    # 訓練データに対する Mean Squared Error (MSE)
     lasso_mse_train = mean_squared_error(y_train, lasso_y_pred)
+    # テストデータに対する Mean Squared Error (MSE)
+    lasso_y_test_pred = lasso.predict(X_test_scaled)
+    lasso_mse_test = mean_squared_error(y_test, lasso_y_test_pred)
 
-    lasso_X_test_scaled = scaler.transform(X_test)
-    lasso_y_pred_test = lasso.predict(lasso_X_test_scaled)
-    lasso_mse_test = mean_squared_error(y_test, lasso_y_pred_test)
-
-    # 正則化ありとなしにおける重回帰分析の精度の比較
-    data = {'訓練データMSE':[mse_train, ridge_mse_train, lasso_mse_train],
-            'テストデータMSE':[mse_test, ridge_mse_test, lasso_mse_test],
-            '決定係数':[model.score(X_test_scaled, y_test), ridge.score(X_test_scaled, y_test), lasso.score(X_test_scaled, y_test)]}
-    df_mse = pd.DataFrame(data=data, index=['重回帰', 'Ridge回帰', 'Lasso回帰'])
-
-    return str(df_mse)
+    return 0
