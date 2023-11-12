@@ -27,9 +27,7 @@ def orchestrator(context: df.DurableOrchestrationContext) -> str:
     data = yield context.call_activity("prepare_data", '')
     simple = yield context.call_activity("simple_regression", {"data": data})
     multiple = yield context.call_activity("multiple_regression", {"data": data})
-    ridge = yield context.call_activity("ridge_regression", multiple)
-    lasso = yield context.call_activity("lasso_regression", multiple)
-    result = yield context.call_activity("origin_analysis", '')
+    # result = yield context.call_activity("origin_analysis", '')
     return "finished"
 
 
@@ -53,8 +51,7 @@ def prepare_data(blank: str):
     data['AllRooms'] = data['AveRooms']*data['Household']
     data['AllBedrms'] = data['AveBedrms']*data['Household']
 
-    data = data.to_dict()
-    return data
+    return data.to_dict()
 
 # 単回帰分析
 @app.activity_trigger(input_name="arg")
@@ -75,8 +72,7 @@ def simple_regression(arg: dict):
     model = LinearRegression()
     model.fit(X, y)
 
-    model = pickle.dumps(model)
-    model = base64.b64encode(model).decode()
+    model = base64.b64encode(pickle.dumps(model)).decode()
     return model
 
 # 重回帰分析
@@ -120,31 +116,8 @@ def multiple_regression(arg: dict):
     y_test_pred = model.predict(X_test_scaled) # テストデータに対して予測する
     mse_test = mean_squared_error(y_test, y_test_pred)
 
-    model = pickle.dumps(model)
-    model = base64.b64encode(model).decode()
-    X_train_scaled = pickle.dumps(X_train_scaled)
-    X_train_scaled = base64.b64encode(X_train_scaled).decode()
-    X_test_scaled = pickle.dumps(X_test_scaled)
-    X_test_scaled = base64.b64encode(X_test_scaled).decode()
-    y_train = pickle.dumps(y_train)
-    y_train = base64.b64encode(y_train).decode()
-    X_test = pickle.dumps(X_test)
-    X_test = base64.b64encode(X_test).decode()
-    y_test = pickle.dumps(y_test)
-    y_test = base64.b64encode(y_test).decode()
-    scaler = pickle.dumps(scaler)
-    scaler = base64.b64encode(scaler).decode()
-    return {"model": model, "X_train_scaled": X_train_scaled, "X_test_scaled": X_test_scaled, "y_train": y_train, "X_test": X_test, "y_test": y_test, "scaler": scaler}
 
-# Ridge回帰
-@app.activity_trigger(input_name="arg")
-def ridge_regression(arg: dict):
-    X_train_scaled = pickle.loads(base64.b64decode(arg["X_train_scaled"]))
-    X_test_scaled = pickle.loads(base64.b64decode(arg["X_test_scaled"]))
-    y_train = pickle.loads(base64.b64decode(arg["y_train"]))
-    y_test = pickle.loads(base64.b64decode(arg['y_test']))
-
-    # Ridge回帰
+### Ridge回帰 ###
     ridge = Ridge(alpha=1.0)
     ridge.fit(X_train_scaled, y_train)
     ridge_y_pred = ridge.predict(X_train_scaled)
@@ -155,19 +128,10 @@ def ridge_regression(arg: dict):
     ridge_y_test_pred = ridge.predict(X_test_scaled) # テストデータに対して予測する
     ridge_mse_test = mean_squared_error(y_test, ridge_y_test_pred)
 
-    ridge = pickle.dumps(ridge)
-    ridge = base64.b64encode(ridge).decode()
-    return ridge
+    ridge = base64.b64encode(pickle.dumps(ridge)).decode()
 
-# Lasso回帰
-@app.activity_trigger(input_name="arg")
-def lasso_regression(arg: dict):
-    X_train_scaled = pickle.loads(base64.b64decode(arg["X_train_scaled"]))
-    X_test_scaled = pickle.loads(base64.b64decode(arg["X_test_scaled"]))
-    y_train = pickle.loads(base64.b64decode(arg["y_train"]))
-    y_test = pickle.loads(base64.b64decode(arg['y_test']))
 
-    # Lasso回帰
+#### Lasso回帰 ###
     lasso = Lasso(alpha=1.0)
     lasso.fit(X_train_scaled, y_train)
     lasso_y_pred = lasso.predict(X_train_scaled)
@@ -178,9 +142,8 @@ def lasso_regression(arg: dict):
     lasso_y_test_pred = lasso.predict(X_test_scaled)
     lasso_mse_test = mean_squared_error(y_test, lasso_y_test_pred)
 
-    lasso = pickle.dumps(lasso)
-    lasso = base64.b64encode(lasso).decode()
-    return lasso
+    lasso = base64.b64encode(pickle.dumps(lasso)).decode()
+    return ridge, lasso
 
 
 #################################################
