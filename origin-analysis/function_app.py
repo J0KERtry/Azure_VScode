@@ -1,4 +1,7 @@
-#### データ分析。機能別に実装。 ####
+''' 
+Github(https://github.com/plotly-dash-apps/502-california-housing-regression/blob/main/analysis/california-housing-simplified.ipynb)
+を参考に下データ分析 
+'''
 import azure.functions as func
 import azure.durable_functions as df
 import numpy as np
@@ -78,7 +81,6 @@ def origin_analysis(blank: str):
 
     # 変数の一覧
     housing.columns
-
     housing.head()
 
     # sklearnは欠損データを処理できないため、欠損値を削除
@@ -94,13 +96,10 @@ def origin_analysis(blank: str):
     # 形状を確認
     print(y.shape)
     print(X.shape)
-
     X.columns
 
     # さらに、Xとyデータをトレーニングセットとテストセットに分割
-    X_train, X_test, y_train, y_test = train_test_split(X, y,
-                                                        test_size=0.2,
-                                                        random_state=42)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
     # 形状が予定通りになったことを確認するために形状を比較
     print(X_train.shape)
@@ -108,27 +107,23 @@ def origin_analysis(blank: str):
     print(X_test.shape)
     print(y_test.shape)
 
-    # データセットの数値変数は何ですか？
+    # データセットの数値変数
     X_train.describe().columns
 
     # スケーラーの「インスタンス化」（sklearnクラスのインスタンスを作成）
     std_scaler = StandardScaler()
 
-    # X_trainデータにスケーラーを「適合」させる
+    # X_trainデータにスケーラーを「fit」させる
     std_scaler = std_scaler.fit(X_train.values)
 
     # スケーラーを使用してデータセットを変換
     X_train_scaled = std_scaler.transform(X_train.values)
     X_train_scaled[0]
-
-    # スケーラーを使用してデータセットを変換
     X_test_scaled = std_scaler.transform(X_test.values)
     X_test_scaled[0]
 
-    # sklearnクラスのローカルインスタンスを作成
-    lin_reg = LinearRegression(fit_intercept=True)
-
     # トレーニングデータセットにインスタンスを適合させる
+    lin_reg = LinearRegression(fit_intercept=True)
     lin_reg.fit(X_train_scaled, y_train)
 
     # 切片と係数を確認
@@ -154,7 +149,7 @@ def origin_analysis(blank: str):
     feature_imp = feature_imp.sort_values('coeffs')
 
     # 棒グラフとしてプロット
-    feature_imp.plot(kind='bar');
+    feature_imp.plot(kind='bar')
 
     # plotlyを使用して同じことを行う
     data = go.Bar(x=list(feature_imp.index), y=feature_imp['coeffs'])
@@ -183,7 +178,6 @@ def origin_analysis(blank: str):
 
     # テストデータセット上で予測を行う
     y_preds = lin_reg.predict(X_test_scaled)
-    # 予測を調べる
 
     # 最初の5つの予測が最初の5つの実際の値とどのように比較されますか？
     true_5 = list(round(y_test[:5], 1))
