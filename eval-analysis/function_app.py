@@ -1,10 +1,12 @@
-#### データ分析。機能別に実装。 ####
+''' 
+Github(https://github.com/plotly-dash-apps/502-california-housing-regression/blob/main/analysis/california-housing-simplified.ipynb)
+を参考にデータ分析 
+'''
 import azure.functions as func
 import azure.durable_functions as df
 import numpy as np
 import pandas as pd
 import matplotlib as mpl
-import matplotlib.pyplot as plt
 import sklearn
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
@@ -19,6 +21,7 @@ from sklearn.tree import DecisionTreeRegressor
 from sklearn.neighbors import KNeighborsRegressor
 from sklearn import linear_model
 import seaborn as sns
+import plotly.express as px
 
 import pickle
 import base64
@@ -42,13 +45,14 @@ def orchestrator(context: df.DurableOrchestrationContext) -> str:
 # 元のモノリシックコード
 @app.activity_trigger(input_name="blank")
 def origin_analysis(blank: str):
-    # to make this notebook's output stable across runs
+### 探索的データ分析 ###
+    # 出力を再現可能にするためにシードを設定
     np.random.seed(42)
     mpl.rc('axes', labelsize=14)
     mpl.rc('xtick', labelsize=12)
     mpl.rc('ytick', labelsize=12)
 
-    # read in the dataset
+    # データセットの読み込み
     housing = pd.read_csv("housing.csv")
     housing.sample(5)
     housing['median_house_value'].describe()
@@ -60,299 +64,282 @@ def origin_analysis(blank: str):
     housing['population'].describe()
     housing['households'].describe()
 
-    # Create income categories
+    # 収入カテゴリの作成
     housing["income_cat"] = pd.cut(housing["median_income"],
                                    bins=[0., 1.5, 3.0, 4.5, 6., np.inf],
                                    labels=[1, 2, 3, 4, 5])
-
     housing["income_cat"].value_counts().sort_index(ascending=True)
 
-    # Create some additional variables
+    # いくつかの追加変数の作成
     housing["rooms_per_hhold"] = housing["total_rooms"]/housing["households"]
     housing["pop_per_household"]=housing["population"]/housing["households"]
-
     housing["rooms_per_hhold"].describe()
-
     housing["pop_per_household"].describe()
-
     housing['ocean_proximity'].value_counts().sort_values(ascending=False)
 
-    # Create dummy variables for ocean proximity
-    # Note: this is also called "one-hot encoding"
-    housing=pd.get_dummies(housing, columns = ['ocean_proximity'], prefix='', prefix_sep='')
+    # オーシャンの近接度のダミー変数の作成（ワンホットエンコーディング）
+    housing=pd.get_dummies(housing, columns=['ocean_proximity'], prefix='', prefix_sep='')
 
-    # what are the variables?
+    # 変数の一覧
     housing.columns
-
     housing.head()
 
-    # sklearn cannot handle missing data. we're just doing to drop it
+### データの前処理 ###
+    # sklearnは欠損データを処理できないため、欠損値を削除
     print(len(housing))
     print(housing.isnull().sum())
     housing.dropna(axis=1, inplace=True)
     print(len(housing))
 
-    # First, split your data into features (X) and labels (y).
+    # データを特徴量（X）とラベル（y）に分割
     y = housing["median_house_value"].copy()
-    # We drop one of the 'ocean_proximity' categories so that the coefficients will be interpretable
-    X = housing.drop(["median_house_value",'<1H OCEAN'], axis=1)
-    # Compare their shapes.
+    # 'ocean_proximity'のカテゴリのうち1つを削除して、係数が解釈可能になるようにする
+    X = housing.drop(["median_house_value", '<1H OCEAN'], axis=1)
+    # 形状を確認
     print(y.shape)
     print(X.shape)
-
     X.columns
 
-    # Now, split both X and y data into training and testing sets.
-    X_train, X_test, y_train, y_test = train_test_split(X, y, 
-                                           test_size=0.2, 
-                                           random_state=42)
+    # Xとyデータをトレーニングセットとテストセットに分割
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-    # Compare the shapes to confirm this did what you wanted.
+    # 形状が予定通りになったことを確認するために形状を比較
     print(X_train.shape)
     print(y_train.shape)
     print(X_test.shape)
     print(y_test.shape)
 
-    # What are the numeric variables in my dataset?
+    # データセットの数値変数
     X_train.describe().columns
 
-    # "Instantiate" the scaler (create an instance of the sklearn class)
+    # X_trainデータにスケーラーを「fit」させる
     std_scaler = StandardScaler()
-
-    # 'Fit' the scaler to our X_train data
     std_scaler = std_scaler.fit(X_train.values)
 
-    # Use the scaler to transform the dataset
+    # スケーラーを使用してデータセットを変換
     X_train_scaled = std_scaler.transform(X_train.values)
-    X_train_scaled[0]
-
-    # Use the scaler to transform the dataset
     X_test_scaled = std_scaler.transform(X_test.values)
-    X_test_scaled[0]
 
-    # Create a local instance of the sklearn class
-    lin_reg = LinearRegression(fit_intercept=True)    
 
-    # Fit your instance to the training dataset
+### 単回帰分析 ###
+    # 線形回帰モデルを作成
+    lin_reg = LinearRegression(fit_intercept=True)
     lin_reg.fit(X_train_scaled, y_train)
 
-    # Check the intercept and coefficients
+    # 切片と係数を確認
     print(lin_reg.intercept_)
     print(lin_reg.coef_)
 
-    # 'Attributes' is another name for our list of features (aka predictors, independent variables)
+    # 'Attributes' は、特徴（予測変数、独立変数）のリストの別名
     attributes=X_test.columns
     print(attributes)
-    # 'Feature importances' is another name for our coefficients (ie., the impace of each feature on the outcome or DV)
+
+    # 'Feature importances' は、係数の別名（つまり、各特徴が成果または DV に与える影響）
     feature_importances=lin_reg.coef_
     print(feature_importances)
 
-    # obviously, these 2 things will have the same length
+    # 2つの要素は同じ長さ
     print(len(feature_importances))
     print(len(attributes))
 
-    [int(x) for x in list(feature_importances)]
+    feature_importances = [int(x) for x in feature_importances] # 係数を整数に変換します
 
-    # let's take a look at the results
+    # 結果
     feature_imp = pd.DataFrame(list(zip(attributes, feature_importances)), columns=['features', 'coeffs'])
     feature_imp=feature_imp.set_index('features')
     feature_imp=feature_imp.sort_values('coeffs')
 
-    # plot that as a bar chart
+    # 棒グラフをプロット
     feature_imp.plot(kind='bar');
-
-    # with plotly
     data = go.Bar(x=list(feature_imp.index), y=feature_imp['coeffs'])
-    coefs = go.Figure([data])    
+    coefs = go.Figure([data])
 
-    X_train.columns
-
-    # Show variables for a single observation:
+    # 単一の観測の変数を表示
     print(X_train.iloc[0])
 
-    # Show scaled variables for that single observation:
-    # Remember that we dropped the variable "<1H OCEAN"
+    # 単一の観測のスケールされた変数を表示
+    # 変数 "<1H OCEAN" を削除したことに注意
     print(X_train_scaled[0])
 
-    # Make a prediction on that:
+    # 予測
     lin_reg.predict([X_train_scaled[0]])
 
-    # Make up some fake data that's similar
+    # 似たような偽のデータを作成
     fake = np.array([-122, 37, 40, 2000, 3000, 500, 3, 3, 6, 4, 0, 0, 1, 0]).reshape(1, -1)
 
-    # Standardize using the trained scaler
+    # 訓練されたスケーラーを使用して標準化
     std_fake = std_scaler.transform(fake)
 
-    # Try a prediction for that observation:
+    # 予測を試す
     lin_reg.predict(std_fake)
 
-    # Make predictions on the testing dataset
+    # テストデータセットの予測を行う
     y_preds = lin_reg.predict(X_test_scaled)
-    # Examine your predictions
 
-    # How do the first five predictions compare to the first five actual values?
+    # 最初の5つの予測と、最初の5つの実際の値を比較
     true_5=list(round(y_test[:5], 1))
     pred_5=[round(x,1) for x in list(y_preds[:5])]
     print('true values:', true_5)
     print('predicted values:', pred_5)
 
-    # How do we intepret those results?
+    # 結果をどのように解釈するか
     first_5=['district0', 'district1', 'district2', 'district3', 'distict4']
     pd.DataFrame(list(zip(first_5, true_5, pred_5)), columns=['district', 'true', 'predicted'])
 
-    # root mean squared error represents the average error (in $) of our model
+    # ルート平均二乗誤差（RMSE）は、モデルの平均誤差（ドル）を表します
     rmse_ols = np.sqrt(metrics.mean_squared_error(y_test, y_preds))
     rmse_ols = int(rmse_ols)
 
-    # how does this compare to a coinflip (i.e., the mean of our training set)?
+    # コイン投げ（つまり、トレーニングセットの平均）と比較して、どれほど優れていますか？
     avg_val = round(y_train.mean(),2)
 
-    # If we used that as our predictor, then the average error (RMSE) of our model would be:
+    # それを予測値として使用した場合、モデルの平均誤差（RMSE）
     coinflip_preds=np.full((len(y_test), ), avg_val)
     rmse_coinflip=np.sqrt(metrics.mean_squared_error(y_test, coinflip_preds))
     rmse_coinflip=int(rmse_coinflip)
 
-    # R-squared is the proportion of the variance in the DV that's explained by the model
+    # R-squaredは、DVの分散のうちモデルによって説明される割合
     r2_ols=metrics.r2_score(y_test, y_preds)
     r2_ols=round(r2_ols, 2)
 
-    # how does this compare to a coinflip (i.e., the mean of our training set)?
+    # コイン投げ（つまり、トレーニングセットの平均）と比較して、どれほど優れていますか？
     r2_coinflip=metrics.r2_score(y_test, coinflip_preds)
     r2_coinflip=round(r2_coinflip,2)
 
-    # Compare OLS Linear Regression to the Baseline
-    evaluation_df = pd.DataFrame([['Baseline',rmse_coinflip, r2_coinflip], 
-                                  ['OLS Linear Regression', rmse_ols, r2_ols]], 
-                                 columns=['Model','RMSE','R-squared']
-                                )
+    # OLS線形回帰をベースラインと比較
+    evaluation_df = pd.DataFrame([['Baseline',rmse_coinflip, r2_coinflip],
+                                      ['OLS Linear Regression', rmse_ols, r2_ols]],
+                                     columns=['Model','RMSE','R-squared']
+                                    )
     evaluation_df.set_index('Model', inplace=True)
 
-    # Bar chart with plotly: RMSE
+    # RMSE: Plotlyを使用した棒グラフ
     trace = go.Bar(x=list(evaluation_df.index), y=evaluation_df['RMSE'], marker=dict(color=['#E53712', '#1247E5']))
-    layout = go.Layout(title = 'Median House Value by District: Root Mean Squared Error', # Graph title
-        yaxis = dict(title = 'Models'), # x-axis label
-        xaxis = dict(title = 'RMSE'), # y-axis label  
-                      ) 
+    layout = go.Layout(title = '地区ごとの平均家屋価値：ルート平均二乗誤差', # グラフのタイトル
+            yaxis = dict(title = 'モデル'), # x軸ラベル
+            xaxis = dict(title = 'RMSE'), # y軸ラベル
+                          )
 
     fig = go.Figure(data = [trace], layout=layout)
 
-    # Bar chart with plotly: RMSE
+    # R-squared: Plotlyを使用した棒グラフ
     trace = go.Bar(x=list(evaluation_df.index), y=evaluation_df['R-squared'], marker=dict(color=['#E53712', '#1247E5']))
-    layout = go.Layout(title = 'Median House Value by District: R-squared', # Graph title
-        yaxis = dict(title = 'Models'), # x-axis label
-        xaxis = dict(title = 'R-Squared'), # y-axis label  
-                      ) 
+    layout = go.Layout(title = '地区ごとの平均家屋価値：R-squared', # グラフのタイトル
+            yaxis = dict(title = 'モデル'), # x軸ラベル
+            xaxis = dict(title = 'R-Squared'), # y軸ラベル
+                          )
 
     fig = go.Figure(data = [trace], layout=layout)
 
-    # Visualize our true vs. predicted values
-    plt.figure(figsize=(7,7))
-    plt.title('Median House Value by District')
-    plt.ylabel('True Values')
-    plt.xlabel('Predicted Values')
-    fig=sns.regplot(x=y_preds, y=y_test)
-    plt.show()
+    # データ可視化
+    fig = sns.regplot(x=y_preds, y=y_test)
 
-    # same thing with plotly
-    import plotly.express as px
+    # Plotlyでも可視化
     fig = px.scatter(y=y_test, x=y_preds, trendline="ols", width=500, height=500)
-    fig.update_layout(title = 'Median House Value by District', # Graph title
-        yaxis = dict(title = 'True values'), # x-axis label
-        xaxis = dict(title = 'Predicted values'), # y-axis label   
-    )
+    fig.update_layout(title='地区別の住宅の中間値',  # グラフタイトル
+                      yaxis=dict(title='真の値'),  # x軸ラベル
+                      xaxis=dict(title='予測値'),  # y軸ラベル
+                      )
     fig.update_traces(line_color='#E53712', line_width=5)
     fig.show()
 
-    
-    # Create a local instance of the sklearn class
+
+### Ridge回帰モデル ###
+    # Ridge回帰モデルを訓練データに当てはめる
     ridge_model = linear_model.Ridge(alpha=.5)
-    # Fit your instance to the training dataset
     ridge_model.fit(X_train_scaled, y_train)
-    # Make predictions on the testing dataset
+
+    # テストデータに対する予測
     y_preds = ridge_model.predict(X_test_scaled)
-    # root mean squared error represents the average error (in $) of our model
+
+    # 平均二乗誤差（RMSE）は、モデルの平均誤差（ドル単位）を表す
     ridge_rmse = int(np.sqrt(metrics.mean_squared_error(y_test, y_preds)))
-    # R-squared is the proportion of the variance in the DV that's explained by the model
-    ridge_r2=round(metrics.r2_score(y_test, y_preds),2)
+
+    # R2スコアは、モデルによって説明されるDVの分散の割合です
+    ridge_r2 = round(metrics.r2_score(y_test, y_preds), 2)
     print(ridge_rmse, ridge_r2)
 
-    
-    # Create a local instance of the sklearn class
+
+### K近傍法モデル ###
+    # K近傍法モデルを訓練データに当てはめる
     knn_model = KNeighborsRegressor(n_neighbors=8)
-    # Fit your instance to the training dataset
     knn_model.fit(X_train_scaled, y_train)
-    # Make predictions on the testing dataset
+
+    # テストデータに対する予測
     y_preds = knn_model.predict(X_test_scaled)
-    # root mean squared error represents the average error (in $) of our model
+
+    # 平均二乗誤差（RMSE）は、モデルの平均誤差（ドル単位）を表す
     knn_rmse = int(np.sqrt(metrics.mean_squared_error(y_test, y_preds)))
-    # R-squared is the proportion of the variance in the DV that's explained by the model
-    knn_r2=round(metrics.r2_score(y_test, y_preds),2)
+
+    # R2スコアは、モデルによって説明されるDVの分散の割合
+    knn_r2 = round(metrics.r2_score(y_test, y_preds), 2)
     print(knn_rmse, knn_r2)
 
-    
-    # Create a local instance of the sklearn class
+
+### 決定木回帰モデル ###
+    # 決定木回帰モデルを訓練データに当てはめる
     tree_model = DecisionTreeRegressor(max_depth=9)
-    # Fit your instance to the training dataset
     tree_model.fit(X_train_scaled, y_train)
-    # Make predictions on the testing dataset
+
+    # テストデータに対する予測
     y_preds = tree_model.predict(X_test_scaled)
-    # root mean squared error represents the average error (in $) of our model
+
+    # 平均二乗誤差（RMSE）は、モデルの平均誤差（ドル単位）を表す
     tree_rmse = int(np.sqrt(metrics.mean_squared_error(y_test, y_preds)))
-    # R-squared is the proportion of the variance in the DV that's explained by the model
-    tree_r2=round(metrics.r2_score(y_test, y_preds),2)
+
+    # R2スコアは、モデルによって説明されるDVの分散の割合
+    tree_r2 = round(metrics.r2_score(y_test, y_preds), 2)
     print(tree_rmse, tree_r2)
 
 
-    # Create a local instance of the sklearn class
+### random forestモデル ###
+    # random forestモデルを訓練データに当てはめる
     forest_model = RandomForestRegressor(max_depth=10, n_estimators=200)
-    # Fit your instance to the training dataset
     forest_model.fit(X_train_scaled, y_train)
-    # Make predictions on the testing dataset
+
+    # テストデータセットで予測
     y_preds = forest_model.predict(X_test_scaled)
-    # root mean squared error represents the average error (in $) of our model
+
+    # ルート平均二乗誤差（RMSE）は、モデルの平均誤差（ドル単位）を表す
     forest_rmse = int(np.sqrt(metrics.mean_squared_error(y_test, y_preds)))
-    # R-squared is the proportion of the variance in the DV that's explained by the model
+
+    # R2スコアは、説明変数によって説明される従属変数の分散の割合
     forest_r2=round(metrics.r2_score(y_test, y_preds),2)
+
     print(forest_rmse, forest_r2)
 
-    # Compare OLS Linear Regression to the Baseline
 
-    evaluation_df2 = pd.DataFrame([['Baseline',rmse_coinflip, r2_coinflip], 
-                                  ['OLS Linear Regression', rmse_ols, r2_ols],
-                                  ['Ridge Regession', ridge_rmse, ridge_r2],
-                                  ['K-Nearest Neighbors Regression', knn_rmse, knn_r2],
-                                  ['Decision Tree Regression', tree_rmse, tree_r2],
-                                  ['Random Forest Regression', forest_rmse, forest_r2]], 
-                                 columns=['Model','RMSE','R-squared']
-                                )
-    evaluation_df2.set_index('Model', inplace=True) 
+### 棒グラフで結果可視化 ###
+    evaluation_df2 = pd.DataFrame([['ベースライン',rmse_coinflip, r2_coinflip],
+                                      ['OLS線形回帰', rmse_ols, r2_ols],
+                                      ['リッジ回帰', ridge_rmse, ridge_r2],
+                                      ['K近傍法回帰', knn_rmse, knn_r2],
+                                      ['決定木回帰', tree_rmse, tree_r2],
+                                      ['ランダムフォレスト回帰', forest_rmse, forest_r2]],
+                                     columns=['モデル','RMSE','R-squared']
+                                    )
+    evaluation_df2.set_index('モデル', inplace=True)
 
-    # Bar chart with plotly: RMSE
-    trace = go.Bar(x=list(evaluation_df2.index), 
-                   y=evaluation_df2['RMSE'], 
-                   marker=dict(color=['gray', '#e96060', 'gray', 'gray', 'gray', 'gray']),
-    #                marker=dict(color=['#ebc83d','#badf55', '#35b1c9','#b06dad','#e96060', '#1e1d69']),
-    #               plot_bgcolor='rgb(10,10,10)'
-                  )
-    layout = go.Layout(title = 'Model Comparison: Root Mean Squared Error', # Graph title
-        yaxis = dict(title = 'Models'), # x-axis label
-        xaxis = dict(title = 'RMSE'), # y-axis label  
-                      ) 
+    # RMSEの棒グラフを作成
+    trace = go.Bar(x=list(evaluation_df2.index),
+                       y=evaluation_df2['RMSE'],
+                       marker=dict(color=['gray', '#e96060', 'gray', 'gray', 'gray', 'gray']),
+                      )
+    layout = go.Layout(title = 'モデル比較: ルート平均二乗誤差', # グラフタイトル
+            yaxis = dict(title = 'モデル'), # x軸ラベル
+            xaxis = dict(title = 'RMSE'), # y軸ラベル
+                          )
 
     rmse_fig = go.Figure(data = [trace], layout=layout)
 
-    # Bar chart with plotly: R-Squared
-    trace = go.Bar(x=list(evaluation_df2.index), 
-                   y=evaluation_df2['R-squared'], 
-                   marker=dict(color=['gray', '#e96060', 'gray', 'gray', 'gray', 'gray']),
-    #                marker=dict(color=['#ebc83d','#badf55', '#35b1c9','#b06dad','#e96060', '#1e1d69']),
-    #               plot_bgcolor='rgb(10,10,10)'
-                  )
-    layout = go.Layout(title = 'Model Comparison: R-Squared', # Graph title
-        yaxis = dict(title = 'Models'), # x-axis label
-        xaxis = dict(title = 'R-Squared'), # y-axis label  
-                      ) 
+    # R2スコアの棒グラフを作成
+    trace = go.Bar(x=list(evaluation_df2.index),
+                       y=evaluation_df2['R-squared'],
+                       marker=dict(color=['gray', '#e96060', 'gray', 'gray', 'gray', 'gray']),
+                      )
+    layout = go.Layout(title = 'モデル比較: R-Squared', # グラフタイトル
+            yaxis = dict(title = 'モデル'), # x軸ラベル
+            xaxis = dict(title = 'R-Squared'), # y軸ラベル
+                          )
 
     r2_fig = go.Figure(data = [trace], layout=layout)
-
-    return 0
