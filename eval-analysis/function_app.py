@@ -43,8 +43,9 @@ def orchestrator(context: df.DurableOrchestrationContext) -> str:
 
 #################################################
 # 元のモノリシックコード
+@app.blob_input(arg_name="inputblob", path="dataset/housing.csv", connection="BlobStorageConnection")
 @app.activity_trigger(input_name="blank")
-def origin_analysis(blank: str):
+def origin_analysis(blank: str, inputblob: func.InputStream):
 ### 探索的データ分析 ###
     # 出力を再現可能にするためにシードを設定
     np.random.seed(42)
@@ -53,7 +54,7 @@ def origin_analysis(blank: str):
     mpl.rc('ytick', labelsize=12)
 
     # データセットの読み込み
-    housing = pd.read_csv("housing.csv")
+    housing = pd.read_csv(inputblob)
     housing.sample(5)
     housing['median_house_value'].describe()
     housing['latitude'].describe()
@@ -84,11 +85,12 @@ def origin_analysis(blank: str):
     housing.columns
     housing.head()
 
+
 ### データの前処理 ###
     # sklearnは欠損データを処理できないため、欠損値を削除
     print(len(housing))
     print(housing.isnull().sum())
-    housing.dropna(axis=1, inplace=True)
+    housing.drop('total_bedrooms', axis=1, inplace=True)
     print(len(housing))
 
     # データを特徴量（X）とラベル（y）に分割
@@ -98,13 +100,13 @@ def origin_analysis(blank: str):
     # 形状を確認
     print(y.shape)
     print(X.shape)
-    X.columns
+    print("X.columns: ", X.columns)
 
     # Xとyデータをトレーニングセットとテストセットに分割
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
     # 形状が予定通りになったことを確認するために形状を比較
-    print(X_train.shape)
+    print("X_train.shape:", X_train.shape)
     print(y_train.shape)
     print(X_test.shape)
     print(y_test.shape)
@@ -121,11 +123,11 @@ def origin_analysis(blank: str):
     X_test_scaled = std_scaler.transform(X_test.values)
 
 
-### 単回帰分析 ###
+### 多変量線形回帰分析 ###
+
     # 線形回帰モデルを作成
     lin_reg = LinearRegression(fit_intercept=True)
     lin_reg.fit(X_train_scaled, y_train)
-
     # 切片と係数を確認
     print(lin_reg.intercept_)
     print(lin_reg.coef_)
@@ -133,16 +135,14 @@ def origin_analysis(blank: str):
     # 'Attributes' は、特徴（予測変数、独立変数）のリストの別名
     attributes=X_test.columns
     print(attributes)
-
     # 'Feature importances' は、係数の別名（つまり、各特徴が成果または DV に与える影響）
     feature_importances=lin_reg.coef_
     print(feature_importances)
-
     # 2つの要素は同じ長さ
     print(len(feature_importances))
     print(len(attributes))
-
-    feature_importances = [int(x) for x in feature_importances] # 係数を整数に変換します
+    # 係数を整数に変換
+    feature_importances = [int(x) for x in feature_importances] 
 
     # 結果
     feature_imp = pd.DataFrame(list(zip(attributes, feature_importances)), columns=['features', 'coeffs'])
@@ -181,7 +181,6 @@ def origin_analysis(blank: str):
     pred_5=[round(x,1) for x in list(y_preds[:5])]
     print('true values:', true_5)
     print('predicted values:', pred_5)
-
     # 結果をどのように解釈するか
     first_5=['district0', 'district1', 'district2', 'district3', 'distict4']
     pd.DataFrame(list(zip(first_5, true_5, pred_5)), columns=['district', 'true', 'predicted'])
@@ -219,7 +218,6 @@ def origin_analysis(blank: str):
             yaxis = dict(title = 'モデル'), # x軸ラベル
             xaxis = dict(title = 'RMSE'), # y軸ラベル
                           )
-
     fig = go.Figure(data = [trace], layout=layout)
 
     # R-squared: Plotlyを使用した棒グラフ
@@ -228,7 +226,6 @@ def origin_analysis(blank: str):
             yaxis = dict(title = 'モデル'), # x軸ラベル
             xaxis = dict(title = 'R-Squared'), # y軸ラベル
                           )
-
     fig = go.Figure(data = [trace], layout=layout)
 
     # データ可視化
@@ -329,7 +326,6 @@ def origin_analysis(blank: str):
             yaxis = dict(title = 'モデル'), # x軸ラベル
             xaxis = dict(title = 'RMSE'), # y軸ラベル
                           )
-
     rmse_fig = go.Figure(data = [trace], layout=layout)
 
     # R2スコアの棒グラフを作成
@@ -341,5 +337,4 @@ def origin_analysis(blank: str):
             yaxis = dict(title = 'モデル'), # x軸ラベル
             xaxis = dict(title = 'R-Squared'), # y軸ラベル
                           )
-
     r2_fig = go.Figure(data = [trace], layout=layout)
