@@ -38,14 +38,20 @@ async def client_function(req: func.HttpRequest, client: df.DurableOrchestration
 ### オーケストレーター関数 ###
 @app.orchestration_trigger(context_name="context")
 def orchestrator(context: df.DurableOrchestrationContext) -> str:
-    housing = yield context.call_activity("exploratory_data_analysis", '') 
-    data = yield context.call_activity("data_preprocessing", housing) 
-    result = yield context.call_activity("multivariate_linear_regression", data) 
-    ridge = yield context.call_activity("ridge_regression", data) 
-    knn = yield context.call_activity("k_nearest_neighbor", data) 
-    tree = yield context.call_activity("decision_tree_regression", data) 
-    forest = yield context.call_activity("random_forest", data) 
-    result = yield context.call_activity("result_visualization3", {**ridge, **knn, **tree, **forest}) 
+    housing = yield context.call_activity("exploratory_data_analysis", '')  # housing = housing.to_dict()
+    data = yield context.call_activity("data_preprocessing", housing)   # data = {std_scaler, train, test...}
+    multi = yield context.call_activity("multivariate_linear_regression", data)     # multi = {rmse_r2 coinflip, ols}
+
+    param = {"X_train_scaled": data["X_train_scaled"], 
+             "X_test_scaled": data["X_test_scaled"], 
+             "y_train": data["y_train"], 
+             "y_test": data["y_test"]}
+    ridge = yield context.call_activity("ridge_regression", param) 
+    knn = yield context.call_activity("k_nearest_neighbor", param) 
+    tree = yield context.call_activity("decision_tree_regression", param) 
+    forest = yield context.call_activity("random_forest", param) 
+
+    result = yield context.call_activity("result_visualization", {**multi, **ridge, **knn, **tree, **forest}) 
     return result
 
 #################################################
@@ -144,12 +150,8 @@ def data_preprocessing(input: dict):
     y_test = base64.b64encode(pickle.dumps(y_test)).decode()
     data = {
         "std_scaler": std_scaler,
-        "X_train": X_train,
-        "X_train_scaled": X_train_scaled,
-        "X_test": X_test,
-        "X_test_scaled": X_test_scaled,
-        "y_train": y_train,
-        "y_test": y_test
+        "X_train": X_train, "X_train_scaled": X_train_scaled, "X_test": X_test, "X_test_scaled": X_test_scaled,
+        "y_train": y_train, "y_test": y_test
     }
     return data
 
@@ -280,7 +282,11 @@ def multivariate_linear_regression(input: dict):
     fig.update_traces(line_color='#E53712', line_width=5)
     fig.show()
 
-    return 0
+    rmse_coinflip = base64.b64encode(pickle.dumps(rmse_coinflip)).decode()
+    r2_coinflip = base64.b64encode(pickle.dumps(r2_coinflip)).decode()
+    rmse_ols = base64.b64encode(pickle.dumps(rmse_ols)).decode()
+    r2_ols = base64.b64encode(pickle.dumps(r2_ols)).decode()
+    return {"rmse_coinflip": rmse_coinflip, "r2_coinflip": r2_coinflip, "rmse_ols": rmse_ols, "r2_ols": r2_ols }
 
 
 ### Ridge回帰モデル ###
@@ -440,4 +446,7 @@ def result_visualization(input: dict):
                           )
     r2_fig = go.Figure(data = [trace], layout=layout)
 
-    return 0
+    evaluation_df2 = base64.b64encode(pickle.dumps(evaluation_df2)).decode()
+    rmse_fig = base64.b64encode(pickle.dumps(rmse_fig)).decode()
+    r2_fig = base64.b64encode(pickle.dumps(r2_fig)).decode()
+    return {"evaluation_df2": evaluation_df2, "rmse_fig": rmse_fig, "r2_fig": r2_fig}

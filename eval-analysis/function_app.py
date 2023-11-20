@@ -22,7 +22,6 @@ from sklearn.neighbors import KNeighborsRegressor
 from sklearn import linear_model
 import seaborn as sns
 import plotly.express as px
-
 import pickle
 import base64
 
@@ -38,15 +37,45 @@ async def client_function(req: func.HttpRequest, client: df.DurableOrchestration
 ### オーケストレーター関数 ###
 @app.orchestration_trigger(context_name="context")
 def orchestrator(context: df.DurableOrchestrationContext) -> str:
-    result = yield context.call_activity("origin_analysis", '')
-    return "finished"
+    data1 = yield context.call_activity("activity1", '')     # data1 = X, y
+
+    data2 = yield context.call_activity("activity2", data1)  # data2 = {std_scaler, lin_reg, X_train, X_train_scaled, X_test_scaled, y_train, y_test}
+    std_scaler = data2["std_scaler"]
+    lin_reg = data2["lin_reg"]
+    X_train = data2["X_train"]
+    X_train_scaled = data2["X_train_scaled"]
+    X_test_scaled = data2["X_test_scaled"]
+    y_train = data2["y_train"]
+    y_test = data2["y_test"]
+    
+    param = {"std_scaler": std_scaler, "lin_reg": lin_reg, 
+             "X_train": X_train, "X_train_scaled": X_train_scaled, "X_test_scaled": X_test_scaled, 
+             "y_test": y_test}
+    data3 = yield context.call_activity("activity3", param)  # data3 = {y_preds}
+    y_preds = data3["y_preds"]
+
+    param = {"y_train": y_train, "y_test": y_test, "y_preds": y_preds}
+    data4 = yield context.call_activity("activity4", param)  # data4 = {rmse_ols, r2_ols, rmse_coinflip, r2_coinflip}
+
+    param = {"y_test": y_test, "y_preds": y_preds, 
+             "rmse_ols": data4["rmse_ols"], "r2_ols": data4["r2_ols"],
+             "rmse_coinflip": data4["rmse_coinflip"], "r2_coinflip": data4["r2_coinflip"]}
+    data5 = yield context.call_activity("activity5", param)  # data5 = {evaluation_df}
+
+    param = {"X_train_scaled": X_train_scaled, "X_test_scaled": X_test_scaled, "y_train": y_train, "y_test": y_test}
+    data6 = yield context.call_activity("activity6", param)  # data6 = {ridge_rmse, ridge_r2, knn_rmse, knn_r2, tree_rmse, tree_r2}
+
+    data7 = yield context.call_activity("activity7", param)  # data7 = {forest_rmse, forest_r2}
+
+    data8 = yield context.call_activity("activity8", {**data4, **data6, **data7})     # data8 = {evaluation_df2, rmse_fig, r2_fig}
+    return data8
 
 #################################################
-# 元のモノリシックコード
+### 探索的データ分析 ###
 @app.blob_input(arg_name="inputblob", path="dataset/housing.csv", connection="BlobStorageConnection")
 @app.activity_trigger(input_name="blank")
-def origin_analysis(blank: str, inputblob: func.InputStream):
-### 探索的データ分析 ###
+def activity1(blank: str, inputblob: func.InputStream) -> dict:
+
     # 出力を再現可能にするためにシードを設定
     np.random.seed(42)
     mpl.rc('axes', labelsize=14)
@@ -85,31 +114,39 @@ def origin_analysis(blank: str, inputblob: func.InputStream):
     housing.columns
     housing.head()
 
-
-### データの前処理 ###
     # sklearnは欠損データを処理できないため、欠損値を削除
-    print(len(housing))
-    print(housing.isnull().sum())
+    print("len(housing):",len(housing))
+    print("housing.isnull: ",housing.isnull().sum())
     housing.drop('total_bedrooms', axis=1, inplace=True)
-    print(len(housing))
+    print("len(housing):", len(housing))
 
     # データを特徴量（X）とラベル（y）に分割
     y = housing["median_house_value"].copy()
     # 'ocean_proximity'のカテゴリのうち1つを削除して、係数が解釈可能になるようにする
     X = housing.drop(["median_house_value", '<1H OCEAN'], axis=1)
     # 形状を確認
-    print(y.shape)
-    print(X.shape)
-    print("X.columns: ", X.columns)
+    print("y.shape:", y.shape)
+    print("X.shape:", X.shape)
+    X.columns
+
+    X = base64.b64encode(pickle.dumps(X)).decode()
+    y = base64.b64encode(pickle.dumps(y)).decode()
+    return {"X": X, "y": y}
+
+#-------------------------------------------------------------------
+@app.activity_trigger(input_name="input")
+def activity2(input: dict): 
+    X = pickle.loads(base64.b64decode(input['X']))
+    y = pickle.loads(base64.b64decode(input['y']))
 
     # Xとyデータをトレーニングセットとテストセットに分割
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
     # 形状が予定通りになったことを確認するために形状を比較
     print("X_train.shape:", X_train.shape)
-    print(y_train.shape)
-    print(X_test.shape)
-    print(y_test.shape)
+    print("y_train.shape:", y_train.shape)
+    print("X_test.shape:", X_test.shape)
+    print("y_test.shape:", y_test.shape)
 
     # データセットの数値変数
     X_train.describe().columns
@@ -122,25 +159,22 @@ def origin_analysis(blank: str, inputblob: func.InputStream):
     X_train_scaled = std_scaler.transform(X_train.values)
     X_test_scaled = std_scaler.transform(X_test.values)
 
-
-### 多変量線形回帰分析 ###
-
     # 線形回帰モデルを作成
     lin_reg = LinearRegression(fit_intercept=True)
     lin_reg.fit(X_train_scaled, y_train)
     # 切片と係数を確認
-    print(lin_reg.intercept_)
-    print(lin_reg.coef_)
+    print("lin_reg.intercept_:", lin_reg.intercept_)
+    print("lin_reg.coef_:", lin_reg.coef_)
 
     # 'Attributes' は、特徴（予測変数、独立変数）のリストの別名
     attributes=X_test.columns
-    print(attributes)
+    print("attributes:", attributes)
     # 'Feature importances' は、係数の別名（つまり、各特徴が成果または DV に与える影響）
     feature_importances=lin_reg.coef_
-    print(feature_importances)
+    print("feature_importances:", feature_importances)
     # 2つの要素は同じ長さ
-    print(len(feature_importances))
-    print(len(attributes))
+    print("len(feature_importances):", len(feature_importances))
+    print("len(attributes):", len(attributes))
     # 係数を整数に変換
     feature_importances = [int(x) for x in feature_importances] 
 
@@ -154,12 +188,33 @@ def origin_analysis(blank: str, inputblob: func.InputStream):
     data = go.Bar(x=list(feature_imp.index), y=feature_imp['coeffs'])
     coefs = go.Figure([data])
 
+    std_scaler = base64.b64encode(pickle.dumps(std_scaler)).decode()
+    lin_reg = base64.b64encode(pickle.dumps(lin_reg)).decode()
+    X_train = base64.b64encode(pickle.dumps(X_train)).decode()
+    X_train_scaled = base64.b64encode(pickle.dumps(X_train_scaled)).decode()
+    X_test_scaled = base64.b64encode(pickle.dumps(X_test_scaled)).decode()
+    y_train = base64.b64encode(pickle.dumps(y_train)).decode()
+    y_test = base64.b64encode(pickle.dumps(y_test)).decode()
+    return {"std_scaler": std_scaler, "lin_reg": lin_reg, 
+            "X_train": X_train, "X_train_scaled": X_train_scaled, "X_test_scaled": X_test_scaled, 
+            "y_train": y_train, "y_test": y_test}
+
+#-------------------------------------------------------------------
+@app.activity_trigger(input_name="input")
+def activity3(input: dict):
+    std_scaler = pickle.loads(base64.b64decode(input['std_scaler']))
+    lin_reg = pickle.loads(base64.b64decode(input['lin_reg']))
+    X_train = pickle.loads(base64.b64decode(input['X_train']))
+    X_train_scaled = pickle.loads(base64.b64decode(input['X_train_scaled']))
+    X_test_scaled = pickle.loads(base64.b64decode(input['X_test_scaled']))
+    y_test = pickle.loads(base64.b64decode(input['y_test']))
+
     # 単一の観測の変数を表示
-    print(X_train.iloc[0])
+    print("X_train.iloc[0]: ", X_train.iloc[0])
 
     # 単一の観測のスケールされた変数を表示
     # 変数 "<1H OCEAN" を削除したことに注意
-    print(X_train_scaled[0])
+    print("X_train_scaled[0]:", X_train_scaled[0])
 
     # 予測
     lin_reg.predict([X_train_scaled[0]])
@@ -185,6 +240,16 @@ def origin_analysis(blank: str, inputblob: func.InputStream):
     first_5=['district0', 'district1', 'district2', 'district3', 'distict4']
     pd.DataFrame(list(zip(first_5, true_5, pred_5)), columns=['district', 'true', 'predicted'])
 
+    y_preds = base64.b64encode(pickle.dumps(y_preds)).decode()
+    return {"y_preds": y_preds}
+
+#-------------------------------------------------------------------
+@app.activity_trigger(input_name="input")
+def activity4(input: dict):
+    y_train = pickle.loads(base64.b64decode(input['y_train']))
+    y_test = pickle.loads(base64.b64decode(input['y_test']))
+    y_preds = pickle.loads(base64.b64decode(input['y_preds']))
+
     # ルート平均二乗誤差（RMSE）は、モデルの平均誤差（ドル）を表します
     rmse_ols = np.sqrt(metrics.mean_squared_error(y_test, y_preds))
     rmse_ols = int(rmse_ols)
@@ -205,6 +270,23 @@ def origin_analysis(blank: str, inputblob: func.InputStream):
     r2_coinflip=metrics.r2_score(y_test, coinflip_preds)
     r2_coinflip=round(r2_coinflip,2)
 
+    rmse_ols = base64.b64encode(pickle.dumps(rmse_ols)).decode()
+    r2_ols = base64.b64encode(pickle.dumps(r2_ols)).decode()
+    rmse_coinflip = base64.b64encode(pickle.dumps(rmse_coinflip)).decode()
+    r2_coinflip = base64.b64encode(pickle.dumps(r2_coinflip)).decode()
+    return {"rmse_ols": rmse_ols, "r2_ols": r2_ols,
+            "rmse_coinflip": rmse_coinflip, "r2_coinflip": r2_coinflip}
+
+#-------------------------------------------------------------------
+@app.activity_trigger(input_name="input")
+def activity5(input: dict):
+    rmse_ols = pickle.loads(base64.b64decode(input['rmse_ols']))
+    r2_ols = pickle.loads(base64.b64decode(input['r2_ols']))
+    rmse_coinflip = pickle.loads(base64.b64decode(input['rmse_coinflip']))
+    r2_coinflip = pickle.loads(base64.b64decode(input['r2_coinflip']))
+    y_test = pickle.loads(base64.b64decode(input['y_test']))
+    y_preds = pickle.loads(base64.b64decode(input['y_preds']))
+
     # OLS線形回帰をベースラインと比較
     evaluation_df = pd.DataFrame([['Baseline',rmse_coinflip, r2_coinflip],
                                       ['OLS Linear Regression', rmse_ols, r2_ols]],
@@ -222,7 +304,7 @@ def origin_analysis(blank: str, inputblob: func.InputStream):
 
     # R-squared: Plotlyを使用した棒グラフ
     trace = go.Bar(x=list(evaluation_df.index), y=evaluation_df['R-squared'], marker=dict(color=['#E53712', '#1247E5']))
-    layout = go.Layout(title = '地区ごとの平均家屋価値：R-squared', # グラフのタイトル
+    layout = go.Layout(title = '地区ごとの平均家屋価値: R-squared', # グラフのタイトル
             yaxis = dict(title = 'モデル'), # x軸ラベル
             xaxis = dict(title = 'R-Squared'), # y軸ラベル
                           )
@@ -240,8 +322,17 @@ def origin_analysis(blank: str, inputblob: func.InputStream):
     fig.update_traces(line_color='#E53712', line_width=5)
     fig.show()
 
+    evaluation_df = base64.b64encode(pickle.dumps(evaluation_df)).decode()
+    return {"evaluation_df": evaluation_df}
 
-### Ridge回帰モデル ###
+#-------------------------------------------------------------------
+@app.activity_trigger(input_name="input")
+def activity6(input: dict):
+    X_train_scaled = pickle.loads(base64.b64decode(input['X_train_scaled']))
+    X_test_scaled = pickle.loads(base64.b64decode(input['X_test_scaled']))
+    y_train = pickle.loads(base64.b64decode(input['y_train']))
+    y_test = pickle.loads(base64.b64decode(input['y_test']))
+
     # Ridge回帰モデルを訓練データに当てはめる
     ridge_model = linear_model.Ridge(alpha=.5)
     ridge_model.fit(X_train_scaled, y_train)
@@ -256,8 +347,7 @@ def origin_analysis(blank: str, inputblob: func.InputStream):
     ridge_r2 = round(metrics.r2_score(y_test, y_preds), 2)
     print(ridge_rmse, ridge_r2)
 
-
-### K近傍法モデル ###
+# K近傍法
     # K近傍法モデルを訓練データに当てはめる
     knn_model = KNeighborsRegressor(n_neighbors=8)
     knn_model.fit(X_train_scaled, y_train)
@@ -271,7 +361,6 @@ def origin_analysis(blank: str, inputblob: func.InputStream):
     # R2スコアは、モデルによって説明されるDVの分散の割合
     knn_r2 = round(metrics.r2_score(y_test, y_preds), 2)
     print(knn_rmse, knn_r2)
-
 
 ### 決定木回帰モデル ###
     # 決定木回帰モデルを訓練データに当てはめる
@@ -288,8 +377,25 @@ def origin_analysis(blank: str, inputblob: func.InputStream):
     tree_r2 = round(metrics.r2_score(y_test, y_preds), 2)
     print(tree_rmse, tree_r2)
 
+    ridge_rmse = base64.b64encode(pickle.dumps(ridge_rmse)).decode()
+    ridge_r2 = base64.b64encode(pickle.dumps(ridge_r2)).decode()
+    knn_rmse = base64.b64encode(pickle.dumps(knn_rmse)).decode()
+    knn_r2 = base64.b64encode(pickle.dumps(knn_r2)).decode()
+    tree_rmse = base64.b64encode(pickle.dumps(tree_rmse)).decode()
+    tree_r2 = base64.b64encode(pickle.dumps(tree_r2)).decode()
+    return {"ridge_rmse": ridge_rmse, "ridge_r2": ridge_r2,
+            "knn_rmse": knn_rmse, "knn_r2": knn_r2,
+            "tree_rmse": tree_rmse, "tree_r2": tree_r2}
 
+#-------------------------------------------------------------------
 ### random forestモデル ###
+@app.activity_trigger(input_name="input")
+def activity7(input: dict):
+    X_train_scaled = pickle.loads(base64.b64decode(input['X_train_scaled']))
+    X_test_scaled = pickle.loads(base64.b64decode(input['X_test_scaled']))
+    y_train = pickle.loads(base64.b64decode(input['y_train']))
+    y_test = pickle.loads(base64.b64decode(input['y_test']))
+
     # random forestモデルを訓練データに当てはめる
     forest_model = RandomForestRegressor(max_depth=10, n_estimators=200)
     forest_model.fit(X_train_scaled, y_train)
@@ -305,8 +411,27 @@ def origin_analysis(blank: str, inputblob: func.InputStream):
 
     print(forest_rmse, forest_r2)
 
+    forest_rmse = base64.b64encode(pickle.dumps(forest_rmse)).decode()
+    forest_r2 = base64.b64encode(pickle.dumps(forest_r2)).decode()
+    return {"forest_rmse": forest_rmse, "forest_r2": forest_r2}
 
+#-------------------------------------------------------------------
 ### 棒グラフで結果可視化 ###
+@app.activity_trigger(input_name="input")
+def activity8(input: dict):
+    rmse_coinflip = pickle.loads(base64.b64decode(input['rmse_coinflip']))
+    r2_coinflip = pickle.loads(base64.b64decode(input['r2_coinflip']))
+    rmse_ols = pickle.loads(base64.b64decode(input['rmse_ols']))
+    r2_ols = pickle.loads(base64.b64decode(input['r2_ols']))
+    ridge_rmse = pickle.loads(base64.b64decode(input['ridge_rmse']))
+    ridge_r2 = pickle.loads(base64.b64decode(input['ridge_r2']))
+    knn_rmse = pickle.loads(base64.b64decode(input['knn_rmse']))
+    knn_r2 = pickle.loads(base64.b64decode(input['ridge_r2']))
+    tree_rmse = pickle.loads(base64.b64decode(input['tree_rmse']))
+    tree_r2 = pickle.loads(base64.b64decode(input['tree_r2']))
+    forest_rmse = pickle.loads(base64.b64decode(input['forest_rmse']))
+    forest_r2 = pickle.loads(base64.b64decode(input['forest_r2']))
+
     evaluation_df2 = pd.DataFrame([['ベースライン',rmse_coinflip, r2_coinflip],
                                       ['OLS線形回帰', rmse_ols, r2_ols],
                                       ['リッジ回帰', ridge_rmse, ridge_r2],
@@ -338,3 +463,8 @@ def origin_analysis(blank: str, inputblob: func.InputStream):
             xaxis = dict(title = 'R-Squared'), # y軸ラベル
                           )
     r2_fig = go.Figure(data = [trace], layout=layout)
+
+    evaluation_df2 = base64.b64encode(pickle.dumps(evaluation_df2)).decode()
+    rmse_fig = base64.b64encode(pickle.dumps(rmse_fig)).decode()
+    r2_fig = base64.b64encode(pickle.dumps(r2_fig)).decode()
+    return {"evaluation_df2": evaluation_df2, "rmse_fig": rmse_fig, "r2_fig": r2_fig}
