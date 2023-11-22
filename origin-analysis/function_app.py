@@ -42,10 +42,8 @@ def orchestrator(context: df.DurableOrchestrationContext) -> str:
     data = yield context.call_activity("data_preprocessing", housing)   # data = {std_scaler, train, test...}
     multi = yield context.call_activity("multivariate_linear_regression", data)     # multi = {rmse_r2 coinflip, ols}
 
-    param = {"X_train_scaled": data["X_train_scaled"], 
-             "X_test_scaled": data["X_test_scaled"], 
-             "y_train": data["y_train"], 
-             "y_test": data["y_test"]}
+    param = {"X_train_scaled": data["X_train_scaled"], "X_test_scaled": data["X_test_scaled"], 
+             "y_train": data["y_train"], "y_test": data["y_test"]}
     ridge = yield context.call_activity("ridge_regression", param) 
     knn = yield context.call_activity("k_nearest_neighbor", param) 
     tree = yield context.call_activity("decision_tree_regression", param) 
