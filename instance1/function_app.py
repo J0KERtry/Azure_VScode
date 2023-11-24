@@ -14,7 +14,6 @@ from sklearn.metrics import mean_squared_error
 from sklearn.metrics import mean_absolute_error
 from sklearn.linear_model import LinearRegression
 from sklearn import metrics
-from sklearn.datasets import fetch_california_housing  # データセット
 import plotly.graph_objects as go
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.tree import DecisionTreeRegressor
@@ -23,16 +22,15 @@ from sklearn import linear_model
 import seaborn as sns
 import plotly.express as px
 
-import pickle
-import base64
 
 app = df.DFApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 ### クライアント関数 ###
 @app.route(route="orchestrators/client_function")
 @app.durable_client_input(client_name="client")
 async def client_function(req: func.HttpRequest, client: df.DurableOrchestrationClient) -> func.HttpResponse:
+    act = int(req.params.get('act') or req.get_json().get('act'))
     split = int(req.params.get('split') or req.get_json().get('split'))
-    instance_id = await client.start_new("orchestrator", None, {})
+    instance_id = await client.start_new("orchestrator", None, {"act": act, "split": split})
     await client.wait_for_completion_or_create_check_status_response(req, instance_id)
     return client.create_check_status_response(req, instance_id)
 
@@ -40,19 +38,17 @@ async def client_function(req: func.HttpRequest, client: df.DurableOrchestration
 @app.orchestration_trigger(context_name="context")
 def orchestrator(context: df.DurableOrchestrationContext) -> str:
     parameter = context.get_input()
+    act = int(parameter.get("act"))
     split = int(parameter.get("split")) # 分割数取得
     
-    # ウォーム
-    result = yield context.call_activity("a_code", '') 
-    result = yield context.call_activity("loop", 2)
+    if act == 0:
+        # 複数のインスタンスを経由
+        for i in range(split):
+            result = yield context.call_activity("a_code", '')    
+    elif act == 1:
+        # 1つのインスタンスで何度も実行
+        result = yield context.call_activity("loop", split)
     
-    # コードを複数のインスタンスを経由して起動
-    for i in range(split):
-        result = yield context.call_activity("a_code", '')
-
-    # コードを1つのインスタンスで実行
-    result = yield context.call_activity("loop", split)
-
     return 0
 
 #################################################
@@ -295,7 +291,7 @@ def a_code(blank: str, inputblob: func.InputStream) -> dict:
                                       ['OLS線形回帰', rmse_ols, r2_ols],
                                       ['リッジ回帰', ridge_rmse, ridge_r2],
                                       ['K近傍法回帰', knn_rmse, knn_r2],
-                                      ['決定木回帰', tree_rmse, tree_r2],
+                                      ['決定木回帰', tree_rmse, tree_r2]],
                                      columns=['モデル','RMSE','R-squared']
                                     )
     evaluation_df2.set_index('モデル', inplace=True)
@@ -327,6 +323,7 @@ def a_code(blank: str, inputblob: func.InputStream) -> dict:
 @app.blob_input(arg_name="inputblob", path="dataset/housing.csv", connection="BlobStorageConnection")
 @app.activity_trigger(input_name="split")
 def loop(split: int, inputblob: func.InputStream) -> dict:
+    origin = pd.read_csv(inputblob)
     for i in range(split):
         # 出力を再現可能にするためにシードを設定
         np.random.seed(42)
@@ -335,7 +332,7 @@ def loop(split: int, inputblob: func.InputStream) -> dict:
         mpl.rc('ytick', labelsize=12)
 
         # データセットの読み込み
-        housing = pd.read_csv(inputblob)
+        housing = origin.copy()
         housing.sample(5)
         housing['median_house_value'].describe()
         housing['latitude'].describe()
@@ -562,7 +559,7 @@ def loop(split: int, inputblob: func.InputStream) -> dict:
                                           ['OLS線形回帰', rmse_ols, r2_ols],
                                           ['リッジ回帰', ridge_rmse, ridge_r2],
                                           ['K近傍法回帰', knn_rmse, knn_r2],
-                                          ['決定木回帰', tree_rmse, tree_r2],
+                                          ['決定木回帰', tree_rmse, tree_r2]],
                                          columns=['モデル','RMSE','R-squared']
                                         )
         evaluation_df2.set_index('モデル', inplace=True)
