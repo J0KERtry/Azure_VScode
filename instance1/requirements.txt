@@ -7,3 +7,7 @@ azure-functions-durable
 pandas
 numpy
 scikit-learn
+matplotlib
+plotly
+seaborn
+statsmodels

@@ -35,6 +35,6 @@ def orchestrator(context: df.DurableOrchestrationContext) -> dict:
 # Numpy配列を作成し転送
 @app.activity_trigger(input_name="size")
 def  activity1(size: int) -> dict:
-    data = np.random.randint(0, 100, size= 196610 * 20, dtype=np.int32)
+    data = np.random.randint(0, 100, size= 196610 * 10, dtype=np.int32)
     data = base64.b64encode(pickle.dumps(data)).decode()
     return { "data": data }
