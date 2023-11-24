@@ -48,6 +48,8 @@ def orchestrator(context: df.DurableOrchestrationContext) -> str:
     elif act == 1:
         # 1つのインスタンスで何度も実行
         result = yield context.call_activity("loop", split)
+    elif act == 2:
+        result = yield context.call_activity("test", '')
     
     return 0
 
@@ -55,7 +57,7 @@ def orchestrator(context: df.DurableOrchestrationContext) -> str:
 ### 探索的データ分析 ###
 @app.blob_input(arg_name="inputblob", path="dataset/housing.csv", connection="BlobStorageConnection")
 @app.activity_trigger(input_name="blank")
-def a_code(blank: str, inputblob: func.InputStream) -> dict:
+def a_code(blank: str, inputblob: func.InputStream):
 
     # 出力を再現可能にするためにシードを設定
     np.random.seed(42)
