@@ -15,13 +15,11 @@ from sklearn.metrics import mean_absolute_error
 from sklearn.linear_model import LinearRegression
 from sklearn import metrics
 import plotly.graph_objects as go
-from sklearn.ensemble import RandomForestRegressor
 from sklearn.tree import DecisionTreeRegressor
 from sklearn.neighbors import KNeighborsRegressor
 from sklearn import linear_model
 import seaborn as sns
 import plotly.express as px
-
 
 app = df.DFApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 ### クライアント関数 ###
@@ -46,10 +44,8 @@ def orchestrator(context: df.DurableOrchestrationContext) -> str:
         for i in range(split):
             result = yield context.call_activity("a_code", '')    
     elif act == 1:
-        # 1つのインスタンスで何度も実行
+        # copyして1つのインスタンスで何度も実行
         result = yield context.call_activity("loop", split)
-    elif act == 2:
-        result = yield context.call_activity("test", '')
     
     return 0
 
