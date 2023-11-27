@@ -25,6 +25,7 @@ import plotly.express as px
 
 import pickle
 import base64
+import time
 
 app = df.DFApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 ### クライアント関数 ###
@@ -33,30 +34,46 @@ app = df.DFApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 async def client_function(req: func.HttpRequest, client: df.DurableOrchestrationClient) -> func.HttpResponse:
     instance_id = await client.start_new("orchestrator", None, {})
     await client.wait_for_completion_or_create_check_status_response(req, instance_id)
-    return client.create_check_status_response(req, instance_id)
+    status = await client.get_status(instance_id)
+    return f"output:{status.output}" 
 
 ### オーケストレーター関数 ###
 @app.orchestration_trigger(context_name="context")
 def orchestrator(context: df.DurableOrchestrationContext) -> str:
+    time = []
     housing = yield context.call_activity("exploratory_data_analysis", '')  # housing = housing.to_dict()
-    data = yield context.call_activity("data_preprocessing", housing)   # data = {std_scaler, train, test...}
+    time.append(housing["time"])
+
+    data = yield context.call_activity("data_preprocessing", housing["housing"])   # data = {std_scaler, train, test...}
+    time.append(data["time"])
+
     multi = yield context.call_activity("multivariate_linear_regression", data)     # multi = {rmse_r2 coinflip, ols}
+    time.append(multi["time"])
 
     param = {"X_train_scaled": data["X_train_scaled"], "X_test_scaled": data["X_test_scaled"], 
              "y_train": data["y_train"], "y_test": data["y_test"]}
     ridge = yield context.call_activity("ridge_regression", param) 
-    knn = yield context.call_activity("k_nearest_neighbor", param) 
-    tree = yield context.call_activity("decision_tree_regression", param) 
-    forest = yield context.call_activity("random_forest", param) 
+    time.append(ridge["time"])
 
-    result = yield context.call_activity("result_visualization", {**multi, **ridge, **knn, **tree, **forest}) 
-    return result
+    knn = yield context.call_activity("k_nearest_neighbor", param) 
+    time.append(knn["time"])
+
+    tree = yield context.call_activity("decision_tree_regression", param) 
+    time.append(tree["time"])
+
+    forest = yield context.call_activity("random_forest", param) 
+    time.append(forest["time"])
+
+    result = yield context.call_activity("result_visualization", {**multi, **ridge, **knn, **tree, **forest})
+    time.append(result["time"]) 
+    return time
 
 #################################################
 ### 探索的データ分析 ###
 @app.blob_input(arg_name="inputblob", path="dataset/housing.csv", connection="BlobStorageConnection")
 @app.activity_trigger(input_name="blank")
 def exploratory_data_analysis(blank: str, inputblob: func.InputStream) -> dict:
+    start = time.perf_counter()
 
     # 出力を再現可能にするためにシードを設定
     np.random.seed(42)
@@ -96,7 +113,8 @@ def exploratory_data_analysis(blank: str, inputblob: func.InputStream) -> dict:
     housing.columns
     housing.head()
 
-    return housing.to_dict()
+    end = time.perf_counter() - start
+    return {"housing": housing.to_dict(), "time": end}
 
 
 ### データの前処理 ###
@@ -104,6 +122,7 @@ def exploratory_data_analysis(blank: str, inputblob: func.InputStream) -> dict:
 def data_preprocessing(input: dict):
     housing = pd.DataFrame.from_dict(input)
 
+    start = time.perf_counter()
     # sklearnは欠損データを処理できないため、欠損値を削除
     print("len(housing):",len(housing))
     print("housing.isnull: ",housing.isnull().sum())
@@ -139,6 +158,8 @@ def data_preprocessing(input: dict):
     X_train_scaled = std_scaler.transform(X_train.values)
     X_test_scaled = std_scaler.transform(X_test.values)
 
+    end = time.perf_counter() - start
+
     std_scaler = base64.b64encode(pickle.dumps(std_scaler)).decode()
     X_train = base64.b64encode(pickle.dumps(X_train)).decode()
     X_train_scaled = base64.b64encode(pickle.dumps(X_train_scaled)).decode()
@@ -149,7 +170,8 @@ def data_preprocessing(input: dict):
     data = {
         "std_scaler": std_scaler,
         "X_train": X_train, "X_train_scaled": X_train_scaled, "X_test": X_test, "X_test_scaled": X_test_scaled,
-        "y_train": y_train, "y_test": y_test
+        "y_train": y_train, "y_test": y_test,
+        "time": end
     }
     return data
 
@@ -164,6 +186,8 @@ def multivariate_linear_regression(input: dict):
     X_test_scaled = pickle.loads(base64.b64decode(input['X_test_scaled']))
     y_train = pickle.loads(base64.b64decode(input['y_train']))
     y_test = pickle.loads(base64.b64decode(input['y_test']))
+
+    start = time.perf_counter()
 
     # 線形回帰モデルを作成
     lin_reg = LinearRegression(fit_intercept=True)
@@ -280,11 +304,13 @@ def multivariate_linear_regression(input: dict):
     fig.update_traces(line_color='#E53712', line_width=5)
     fig.show()
 
+    end = time.perf_counter() - start
+
     rmse_coinflip = base64.b64encode(pickle.dumps(rmse_coinflip)).decode()
     r2_coinflip = base64.b64encode(pickle.dumps(r2_coinflip)).decode()
     rmse_ols = base64.b64encode(pickle.dumps(rmse_ols)).decode()
     r2_ols = base64.b64encode(pickle.dumps(r2_ols)).decode()
-    return {"rmse_coinflip": rmse_coinflip, "r2_coinflip": r2_coinflip, "rmse_ols": rmse_ols, "r2_ols": r2_ols }
+    return {"rmse_coinflip": rmse_coinflip, "r2_coinflip": r2_coinflip, "rmse_ols": rmse_ols, "r2_ols": r2_ols, "time": end }
 
 
 ### Ridge回帰モデル ###
@@ -294,6 +320,8 @@ def ridge_regression(input: dict):
     X_test_scaled = pickle.loads(base64.b64decode(input['X_test_scaled']))
     y_train = pickle.loads(base64.b64decode(input['y_train']))
     y_test = pickle.loads(base64.b64decode(input['y_test']))
+
+    start = time.perf_counter()
 
     # Ridge回帰モデルを訓練データに当てはめる
     ridge_model = linear_model.Ridge(alpha=.5)
@@ -309,9 +337,11 @@ def ridge_regression(input: dict):
     ridge_r2 = round(metrics.r2_score(y_test, y_preds), 2)
     print(ridge_rmse, ridge_r2)
 
+    end = time.perf_counter() - start
+
     ridge_rmse = base64.b64encode(pickle.dumps(ridge_rmse)).decode()
     ridge_r2 = base64.b64encode(pickle.dumps(ridge_r2)).decode()
-    return {"ridge_rmse": ridge_rmse, "ridge_r2": ridge_r2}
+    return {"ridge_rmse": ridge_rmse, "ridge_r2": ridge_r2, "time": end}
 
 
 ### K近傍法モデル ###
@@ -321,6 +351,8 @@ def k_nearest_neighbor(input: dict):
     X_test_scaled = pickle.loads(base64.b64decode(input['X_test_scaled']))
     y_train = pickle.loads(base64.b64decode(input['y_train']))
     y_test = pickle.loads(base64.b64decode(input['y_test']))
+
+    start = time.perf_counter()
 
     # K近傍法モデルを訓練データに当てはめる
     knn_model = KNeighborsRegressor(n_neighbors=8)
@@ -336,9 +368,11 @@ def k_nearest_neighbor(input: dict):
     knn_r2 = round(metrics.r2_score(y_test, y_preds), 2)
     print(knn_rmse, knn_r2)
 
+    end = time.perf_counter() - start
+
     knn_rmse = base64.b64encode(pickle.dumps(knn_rmse)).decode()
     knn_r2 = base64.b64encode(pickle.dumps(knn_r2)).decode()
-    return {"knn_rmse": knn_rmse, "knn_r2": knn_r2}
+    return {"knn_rmse": knn_rmse, "knn_r2": knn_r2, "time": end}
 
 
 ### 決定木回帰モデル ###
@@ -348,6 +382,8 @@ def decision_tree_regression(input: dict):
     X_test_scaled = pickle.loads(base64.b64decode(input['X_test_scaled']))
     y_train = pickle.loads(base64.b64decode(input['y_train']))
     y_test = pickle.loads(base64.b64decode(input['y_test']))
+
+    start = time.perf_counter()
 
     # 決定木回帰モデルを訓練データに当てはめる
     tree_model = DecisionTreeRegressor(max_depth=9)
@@ -363,9 +399,11 @@ def decision_tree_regression(input: dict):
     tree_r2 = round(metrics.r2_score(y_test, y_preds), 2)
     print(tree_rmse, tree_r2)
 
+    end = time.perf_counter() - start
+
     tree_rmse = base64.b64encode(pickle.dumps(tree_rmse)).decode()
     tree_r2 = base64.b64encode(pickle.dumps(tree_r2)).decode()
-    return {"tree_rmse": tree_rmse, "tree_r2": tree_r2}
+    return {"tree_rmse": tree_rmse, "tree_r2": tree_r2, "time": end}
 
 
 ### random forestモデル ###
@@ -375,6 +413,8 @@ def random_forest(input: dict):
     X_test_scaled = pickle.loads(base64.b64decode(input['X_test_scaled']))
     y_train = pickle.loads(base64.b64decode(input['y_train']))
     y_test = pickle.loads(base64.b64decode(input['y_test']))
+
+    start = time.perf_counter()
 
     # random forestモデルを訓練データに当てはめる
     forest_model = RandomForestRegressor(max_depth=10, n_estimators=200)
@@ -391,9 +431,11 @@ def random_forest(input: dict):
 
     print(forest_rmse, forest_r2)
 
+    end = time.perf_counter() - start
+
     forest_rmse = base64.b64encode(pickle.dumps(forest_rmse)).decode()
     forest_r2 = base64.b64encode(pickle.dumps(forest_r2)).decode()
-    return {"forest_rmse": forest_rmse, "forest_r2": forest_r2}
+    return {"forest_rmse": forest_rmse, "forest_r2": forest_r2, "time": end}
 
 
 ### 棒グラフで結果可視化 ###
@@ -411,6 +453,8 @@ def result_visualization(input: dict):
     tree_r2 = pickle.loads(base64.b64decode(input['tree_r2']))
     forest_rmse = pickle.loads(base64.b64decode(input['forest_rmse']))
     forest_r2 = pickle.loads(base64.b64decode(input['forest_r2']))
+
+    start = time.perf_counter()
 
     evaluation_df2 = pd.DataFrame([['ベースライン',rmse_coinflip, r2_coinflip],
                                       ['OLS線形回帰', rmse_ols, r2_ols],
@@ -444,7 +488,9 @@ def result_visualization(input: dict):
                           )
     r2_fig = go.Figure(data = [trace], layout=layout)
 
+    end = time.perf_counter() - start
+
     evaluation_df2 = base64.b64encode(pickle.dumps(evaluation_df2)).decode()
     rmse_fig = base64.b64encode(pickle.dumps(rmse_fig)).decode()
     r2_fig = base64.b64encode(pickle.dumps(r2_fig)).decode()
-    return {"evaluation_df2": evaluation_df2, "rmse_fig": rmse_fig, "r2_fig": r2_fig}
+    return {"evaluation_df2": evaluation_df2, "rmse_fig": rmse_fig, "r2_fig": r2_fig, "time": end}
